@@ -1,0 +1,5 @@
+# Android CLI installs these official skill snapshots verbatim.
+.agents/skills/android-cli/** text eol=lf -whitespace
+.agents/skills/edge-to-edge/** text eol=lf -whitespace
+.agents/skills/navigation-3/** text eol=lf -whitespace
+.agents/skills/testing-setup/** text eol=lf -whitespace
