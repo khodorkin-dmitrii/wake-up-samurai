@@ -13,18 +13,31 @@ then save and enable the alarm.
 
 ## Status
 
-The project is at the foundation stage. The Android application shell and
-project conventions are in place; alarm, audio, persistence, and scheduling
-features are not implemented yet.
+Step 1 (project foundation) provides a buildable application shell, an empty
+alarm list, and typed Navigation 3 navigation to a draft-only alarm editor.
+Alarm persistence, audio, permissions, and scheduling are not implemented yet.
 
-## Planned stack
+## Foundation stack and SDK choices
 
-- Kotlin, Jetpack Compose, and Material 3
-- AndroidX Navigation 3 with typed navigation keys
-- ViewModel, immutable `StateFlow`, Coroutines, and Hilt
-- Room for alarm and occurrence data
-- Media3 for local audio preview and ringing playback
-- `AlarmManager` for exact user-facing alarm occurrences
+- `minSdk 24`: keeps broad device coverage while remaining above Hilt's current
+  minimum. No Step 1 API requires a higher minimum.
+- `compileSdk 37` and `targetSdk 37`: required by the current stable Compose,
+  Lifecycle, and Navigation 3 releases selected for the foundation.
+- AGP `9.1.1`, Gradle `9.3.1`, and Kotlin `2.2.10` are retained from the
+  generated project as a known-compatible build toolchain.
+- Compose is aligned by the stable BOM `2026.09.00`; Material 3 uses the BOM
+  rather than an independently pinned version.
+- Navigation 3 `1.2.0` uses serializable typed `NavKey` objects and a saveable
+  back stack. Navigation 2 route strings are not used.
+- Lifecycle `2.11.0`, Activity `1.13.0`, Coroutines `1.11.0`, Hilt/Dagger
+  `2.60.1`, and KSP `2.3.12` provide ViewModel, immutable `StateFlow`, and
+  constructor-injection foundations.
+- The project remains a single `app` module. Current code is separated into
+  screen, navigation, and theme packages; data/domain packages will be added
+  only when their milestones introduce real responsibilities.
+
+Room, Media3, networking, DataStore, and alarm scheduling dependencies are
+intentionally absent from Step 1.
 
 ## Roadmap
 

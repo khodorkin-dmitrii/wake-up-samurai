@@ -1,3 +1,28 @@
 <resources>
     <string name="app_name">Wake Up, Samurai</string>
+    <string name="alarm_list_title">Alarms</string>
+    <string name="empty_state_title">Your mornings are wide open</string>
+    <string name="empty_state_body">Leave tomorrow-you a reason to get up — serious, sweet, or gloriously silly.</string>
+    <string name="add_alarm">Add alarm</string>
+    <string name="editor_title">What are we waking up for?</string>
+    <string name="editor_hint">A walk before the city wakes, one more chapter, pancakes…</string>
+    <string name="draft_notice">Draft only — this text is not saved. Audio changes only after you choose Generate.</string>
+    <string name="back">Back</string>
+    <string name="try_phrase">Try a phrase</string>
+    <string name="suggestion_replace_title">Replace this draft?</string>
+    <string name="suggestion_replace_body">Your current text will be replaced. Audio will not be generated automatically.</string>
+    <string name="replace">Replace</string>
+    <string name="cancel">Cancel</string>
+    <string name="generate_audio">Generate audio</string>
+    <string name="cancel_generation">Cancel generation</string>
+    <string name="retry_generation">Retry</string>
+    <string name="generation_online_notice">Generation sends this text to Microsoft’s online Edge speech service.</string>
+    <string name="generation_generating">Generating audio…</string>
+    <string name="generation_ready">Audio ready</string>
+    <string name="generation_outdated">Audio ready, but it belongs to an older draft.</string>
+    <string name="generation_error">Couldn’t generate audio: %1$s</string>
+    <string name="play_audio">Play</string>
+    <string name="pause_audio">Pause</string>
+    <string name="audio_duration">Duration %1$s</string>
+    <string name="generation_latency">Generated in %1$s s</string>
 </resources>

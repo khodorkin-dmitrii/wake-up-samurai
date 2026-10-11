@@ -223,6 +223,8 @@ JVM tests and successful builds do not prove alarm delivery. Record device check
 
 ## Working rules and device installation
 
+- Respond to the user in Russian for this project.
+- Do not run visual tests on a device or emulator unless the user explicitly requests them.
 - Inspect existing code and preserve established conventions.
 - Keep changes focused and avoid speculative abstractions or unrelated refactors.
 - Do not silently replace an agreed architectural choice.
