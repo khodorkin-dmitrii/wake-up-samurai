@@ -3,6 +3,10 @@ package com.yavin.wakeupsamurai.tts
 import android.os.Bundle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.room.Room
+import com.yavin.wakeupsamurai.data.alarm.RoomAudioAssetRepository
+import com.yavin.wakeupsamurai.data.audio.AudioAssetStorage
+import com.yavin.wakeupsamurai.data.local.WakeUpSamuraiDatabase
 import java.io.File
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -20,11 +24,7 @@ class EdgeSpeechGenerationDeviceTest {
     @Test
     fun generatesRussianMp3OnAndroid() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val generator = EdgeSpeechGeneration(
-            context = context,
-            client = OkHttpClient(),
-            validator = AudioFileValidator(),
-        )
+        val generator = generator()
 
         val result = generator.generate(
             SpeechGenerationRequest(
@@ -95,10 +95,15 @@ class EdgeSpeechGenerationDeviceTest {
 
     private fun generator(): EdgeSpeechGeneration {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val validator = AudioFileValidator()
+        val storage = AudioAssetStorage(context, validator)
+        val database = Room.inMemoryDatabaseBuilder(context, WakeUpSamuraiDatabase::class.java).build()
         return EdgeSpeechGeneration(
             context = context,
             client = OkHttpClient(),
-            validator = AudioFileValidator(),
+            validator = validator,
+            assetRepository = RoomAudioAssetRepository(database.audioAssetDao(), storage),
+            assetStorage = storage,
         )
     }
 

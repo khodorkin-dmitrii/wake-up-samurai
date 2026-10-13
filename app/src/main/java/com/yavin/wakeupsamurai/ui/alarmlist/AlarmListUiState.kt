@@ -1,5 +1,18 @@
 package com.yavin.wakeupsamurai.ui.alarmlist
 
 data class AlarmListUiState(
-    val isEmpty: Boolean = true,
+    val alarms: List<AlarmListItemUi> = emptyList(),
+    val message: String? = null,
+) {
+    val isEmpty: Boolean get() = alarms.isEmpty()
+}
+
+data class AlarmListItemUi(
+    val id: String,
+    val time: String,
+    val repeatSummary: String,
+    val title: String,
+    val nextOccurrence: String,
+    val configuredEnabled: Boolean,
+    val readinessProblem: String?,
 )

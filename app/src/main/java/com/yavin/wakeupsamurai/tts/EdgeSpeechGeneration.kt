@@ -4,6 +4,9 @@ package com.yavin.wakeupsamurai.tts
 import android.content.Context
 import android.os.SystemClock
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.yavin.wakeupsamurai.data.audio.AudioAssetStorage
+import com.yavin.wakeupsamurai.domain.alarm.AudioAsset
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetRepository
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -12,6 +15,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -38,6 +42,8 @@ class EdgeSpeechGeneration @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val client: OkHttpClient,
     private val validator: AudioFileValidator,
+    private val assetRepository: AudioAssetRepository,
+    private val assetStorage: AudioAssetStorage,
 ) : SpeechGeneration {
     override suspend fun generate(request: SpeechGenerationRequest): GeneratedSpeech =
         withContext(Dispatchers.IO) {
@@ -63,7 +69,21 @@ class EdgeSpeechGeneration @Inject constructor(
                     "speech-${request.revision}-${UUID.randomUUID()}.mp3",
                 )
                 promote(temporaryFile, completedFile)
+                val assetId = UUID.randomUUID().toString()
+                val registeredAsset = assetRepository.register(
+                    AudioAsset(
+                        id = assetId,
+                        relativePath = assetStorage.relativePath(completedFile),
+                        sourceText = normalizedText,
+                        voice = request.voice,
+                        languageTag = request.voice.substringBefore('-') + "-" +
+                            request.voice.substringAfter('-').substringBefore('-'),
+                        createdAt = Instant.now(),
+                        durationMillis = duration,
+                    ),
+                )
                 GeneratedSpeech(
+                    assetId = registeredAsset.id,
                     file = completedFile,
                     durationMillis = duration,
                     sourceRevision = request.revision,

@@ -1,6 +1,11 @@
 package com.yavin.wakeupsamurai.ui.alarmeditor
 
+import java.time.DayOfWeek
+
 data class AlarmEditorUiState(
+    val isLoading: Boolean = false,
+    val alarmId: String? = null,
+    val label: String = "",
     val messageDraft: String = "",
     val draftRevision: Long = 0L,
     val generationStatus: GenerationStatus = GenerationStatus.Idle,
@@ -8,12 +13,29 @@ data class AlarmEditorUiState(
     val isPreviewPlaying: Boolean = false,
     val previewErrorMessage: String? = null,
     val showSuggestionReplacementConfirmation: Boolean = false,
+    val hour: Int = 7,
+    val minute: Int = 0,
+    val repeatDays: Set<DayOfWeek> = emptySet(),
+    val nextOccurrenceSummary: String = "",
+    val configuredEnabled: Boolean = false,
+    val resolvedOneShotEpochMillis: Long? = null,
+    val isScheduleDirty: Boolean = false,
+    val isDirty: Boolean = false,
+    val isSaving: Boolean = false,
+    val showDiscardConfirmation: Boolean = false,
+    val showDeleteConfirmation: Boolean = false,
+    val validationMessage: String? = null,
+    val hasPersistedAlarm: Boolean = false,
+    val audioSourceText: String? = null,
 ) {
     val canGenerate: Boolean
         get() = messageDraft.isNotBlank() && generationStatus !is GenerationStatus.Generating
 
     val isGeneratedAudioOutdated: Boolean
-        get() = generatedAudio?.sourceRevision != null && generatedAudio.sourceRevision != draftRevision
+        get() = generatedAudio != null && audioSourceText != messageDraft.trim()
+
+    val canRestoreAudioText: Boolean
+        get() = isGeneratedAudioOutdated && audioSourceText != null
 }
 
 sealed interface GenerationStatus {
@@ -24,6 +46,7 @@ sealed interface GenerationStatus {
 }
 
 data class GeneratedAudioUi(
+    val assetId: String,
     val sourceRevision: Long,
     val durationMillis: Long,
     val generationLatencyMillis: Long,

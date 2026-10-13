@@ -1,7 +1,10 @@
 package com.yavin.wakeupsamurai.ui.alarmeditor
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,13 +24,27 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TimePickerDialog
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.yavin.wakeupsamurai.R
+import com.yavin.wakeupsamurai.ui.theme.WakeUpSamuraiTheme
 import java.util.Locale
+import java.time.DayOfWeek
+import java.time.format.TextStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,10 +58,58 @@ fun AlarmEditorScreen(
     onCancelGeneration: () -> Unit,
     onRetryGeneration: () -> Unit,
     onTogglePreview: () -> Unit,
+    onLabelChanged: (String) -> Unit,
+    onTimeChanged: (Int, Int) -> Unit,
+    onRepeatDayToggled: (DayOfWeek) -> Unit,
+    onConfiguredEnabledChanged: (Boolean) -> Unit,
+    onRestoreAudioText: () -> Unit,
+    onSave: () -> Unit,
+    onDeleteRequested: () -> Unit,
+    onConfirmDelete: () -> Unit,
+    onDismissDelete: () -> Unit,
+    onConfirmDiscard: () -> Unit,
+    onDismissDiscard: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
+    val locale = LocalConfiguration.current.locales[0]
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    if (showTimePicker) {
+        val pickerState = rememberTimePickerState(uiState.hour, uiState.minute, is24Hour = true)
+        TimePickerDialog(
+            onDismissRequest = { showTimePicker = false },
+            title = { Text("Choose time") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onTimeChanged(pickerState.hour, pickerState.minute)
+                    showTimePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showTimePicker = false }) { Text("Cancel") } },
+        ) { TimePicker(state = pickerState) }
+    }
+
+    if (uiState.showDiscardConfirmation) {
+        AlertDialog(
+            onDismissRequest = onDismissDiscard,
+            title = { Text("Discard changes?") },
+            text = { Text("Your unsaved alarm changes will be lost. Completed audio stays in the local asset store.") },
+            confirmButton = { TextButton(onClick = onConfirmDiscard) { Text("Discard") } },
+            dismissButton = { TextButton(onClick = onDismissDiscard) { Text("Keep editing") } },
+        )
+    }
+
+    if (uiState.showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = onDismissDelete,
+            title = { Text("Delete alarm?") },
+            text = { Text("The alarm definition will be deleted. Its completed audio asset will be retained.") },
+            confirmButton = { TextButton(onClick = onConfirmDelete) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = onDismissDelete) { Text("Cancel") } },
+        )
+    }
 
     if (uiState.showSuggestionReplacementConfirmation) {
         AlertDialog(
@@ -93,6 +158,13 @@ fun AlarmEditorScreen(
                 .padding(horizontal = 20.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            OutlinedTextField(
+                value = uiState.label,
+                onValueChange = onLabelChanged,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Label (optional)") },
+            )
             OutlinedTextField(
                 value = uiState.messageDraft,
                 onValueChange = onMessageDraftChanged,
@@ -204,10 +276,60 @@ fun AlarmEditorScreen(
                                 ),
                             )
                         }
+                        if (uiState.canRestoreAudioText) {
+                            OutlinedButton(onClick = onRestoreAudioText) {
+                                Text("Use this audio's original text")
+                            }
+                        }
                         uiState.previewErrorMessage?.let { error ->
                             Text(error, color = MaterialTheme.colorScheme.error)
                         }
                     }
+                }
+            }
+
+            Text("Schedule", style = MaterialTheme.typography.titleLarge)
+            OutlinedButton(onClick = { showTimePicker = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(String.format(Locale.US, "%02d:%02d", uiState.hour, uiState.minute))
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                DayOfWeek.entries.forEach { day ->
+                    FilterChip(
+                        selected = day in uiState.repeatDays,
+                        onClick = { onRepeatDayToggled(day) },
+                        label = { Text(day.getDisplayName(TextStyle.SHORT, locale)) },
+                    )
+                }
+            }
+            Text(
+                if (uiState.repeatDays.isEmpty()) "One occurrence" else "Repeats weekly",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("Next: ${uiState.nextOccurrenceSummary}")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Enabled intent")
+                    Text(
+                        "Scheduling is not implemented; this alarm will not ring yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Switch(checked = uiState.configuredEnabled, onCheckedChange = onConfiguredEnabledChanged)
+            }
+            uiState.validationMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Button(
+                onClick = onSave,
+                enabled = !uiState.isSaving,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (uiState.isSaving) "Saving…" else "Save alarm") }
+            if (uiState.hasPersistedAlarm) {
+                OutlinedButton(onClick = onDeleteRequested, modifier = Modifier.fillMaxWidth()) {
+                    Text("Delete alarm")
                 }
             }
         }
@@ -217,4 +339,49 @@ fun AlarmEditorScreen(
 private fun formatDuration(durationMillis: Long): String {
     val totalSeconds = durationMillis / 1_000L
     return String.format(Locale.US, "%d:%02d", totalSeconds / 60L, totalSeconds % 60L)
+}
+
+@Preview(name = "Light", showBackground = true)
+@Preview(
+    name = "Dark",
+    showBackground = true,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+private fun AlarmEditorScreenPreview() {
+    WakeUpSamuraiTheme {
+        AlarmEditorScreen(
+            uiState = AlarmEditorUiState(
+                messageDraft = "Wake up (wake up)\nGrab a brush and put a little make-up",
+                draftRevision = 1L,
+                generationStatus = GenerationStatus.Ready(sourceRevision = 1L),
+                generatedAudio = GeneratedAudioUi(
+                    assetId = "preview",
+                    sourceRevision = 1L,
+                    durationMillis = 4_224L,
+                    generationLatencyMillis = 935L,
+                ),
+            ),
+            onMessageDraftChanged = {},
+            onTryPhrase = {},
+            onConfirmSuggestionReplacement = {},
+            onDismissSuggestionReplacement = {},
+            onGenerateAudio = {},
+            onCancelGeneration = {},
+            onRetryGeneration = {},
+            onTogglePreview = {},
+            onLabelChanged = {},
+            onTimeChanged = { _, _ -> },
+            onRepeatDayToggled = {},
+            onConfiguredEnabledChanged = {},
+            onRestoreAudioText = {},
+            onSave = {},
+            onDeleteRequested = {},
+            onConfirmDelete = {},
+            onDismissDelete = {},
+            onConfirmDiscard = {},
+            onDismissDiscard = {},
+            onBack = {},
+        )
+    }
 }

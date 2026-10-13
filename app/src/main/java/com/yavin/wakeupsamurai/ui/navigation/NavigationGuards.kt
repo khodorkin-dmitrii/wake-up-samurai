@@ -11,3 +11,11 @@ internal fun <T> MutableList<T>.popIfTop(expectedTop: T): Boolean {
     removeAt(lastIndex)
     return true
 }
+
+internal fun MutableList<androidx.navigation3.runtime.NavKey>.pushEditorIfAbsentOnTop(
+    destination: AlarmEditorKey,
+): Boolean {
+    if (lastOrNull() is AlarmEditorKey) return false
+    add(destination)
+    return true
+}

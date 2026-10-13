@@ -13,6 +13,7 @@ data class SpeechGenerationRequest(
 )
 
 data class GeneratedSpeech(
+    val assetId: String,
     val file: File,
     val durationMillis: Long,
     val sourceRevision: Long,

@@ -1,6 +1,10 @@
 package com.yavin.wakeupsamurai
 
 import android.os.Bundle
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -14,11 +18,15 @@ import com.yavin.wakeupsamurai.ui.alarmlist.AlarmListViewModel
 import com.yavin.wakeupsamurai.ui.navigation.WakeUpSamuraiNavHost
 import com.yavin.wakeupsamurai.ui.theme.WakeUpSamuraiTheme
 import dagger.hilt.android.AndroidEntryPoint
+import androidx.core.content.ContextCompat
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private val alarmListViewModel: AlarmListViewModel by viewModels()
     private val alarmEditorViewModel: AlarmEditorViewModel by viewModels()
+    private val timeChangeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) = refreshTimeDependentUi()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,5 +45,34 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshTimeDependentUi()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        ContextCompat.registerReceiver(
+            this,
+            timeChangeReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_TIME_CHANGED)
+                addAction(Intent.ACTION_DATE_CHANGED)
+                addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+    }
+
+    override fun onStop() {
+        unregisterReceiver(timeChangeReceiver)
+        super.onStop()
+    }
+
+    private fun refreshTimeDependentUi() {
+        alarmListViewModel.refreshTime()
+        alarmEditorViewModel.refreshNextOccurrence()
     }
 }

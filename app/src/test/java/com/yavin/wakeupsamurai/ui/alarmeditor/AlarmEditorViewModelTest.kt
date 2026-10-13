@@ -7,6 +7,14 @@ import com.yavin.wakeupsamurai.tts.SpeechGeneration
 import com.yavin.wakeupsamurai.tts.SpeechGenerationRequest
 import java.io.File
 import java.nio.file.Files
+import com.yavin.wakeupsamurai.data.audio.AudioAssetFileStore
+import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
+import com.yavin.wakeupsamurai.domain.alarm.AlarmWithAudio
+import com.yavin.wakeupsamurai.domain.alarm.NextOccurrenceCalculator
+import com.yavin.wakeupsamurai.domain.alarm.TimeProvider
+import com.yavin.wakeupsamurai.domain.alarm.Alarm
+import java.time.Instant
+import java.time.ZoneId
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,7 +57,7 @@ class AlarmEditorViewModelTest {
     fun repeatedGenerateTapsStartOnlyOneRequest() = runTest(dispatcher) {
         val pending = CompletableDeferred<GeneratedSpeech>()
         val generator = FakeSpeechGeneration { pending.await() }
-        val viewModel = AlarmEditorViewModel(generator, FakeAudioPreview())
+        val viewModel = createViewModel(generator)
 
         viewModel.onMessageDraftChanged("Morning")
         viewModel.onGenerateAudio()
@@ -68,7 +76,7 @@ class AlarmEditorViewModelTest {
     fun editingDuringGenerationCancelsRequestAndPreventsStaleReadyState() = runTest(dispatcher) {
         val pending = CompletableDeferred<GeneratedSpeech>()
         val generator = FakeSpeechGeneration { pending.await() }
-        val viewModel = AlarmEditorViewModel(generator, FakeAudioPreview())
+        val viewModel = createViewModel(generator)
 
         viewModel.onMessageDraftChanged("First")
         viewModel.onGenerateAudio()
@@ -85,10 +93,7 @@ class AlarmEditorViewModelTest {
     @Test
     fun changingTextMarksExistingAudioOutdatedWithoutDeletingIt() = runTest(dispatcher) {
         val generated = generatedSpeech(revision = 1L)
-        val viewModel = AlarmEditorViewModel(
-            FakeSpeechGeneration { generated },
-            FakeAudioPreview(),
-        )
+        val viewModel = createViewModel(FakeSpeechGeneration { generated })
 
         viewModel.onMessageDraftChanged("First")
         viewModel.onGenerateAudio()
@@ -103,11 +108,10 @@ class AlarmEditorViewModelTest {
     @Test
     fun replacingPreviewRetainsBothCompletedAssets() = runTest(dispatcher) {
         val outputs = mutableListOf<GeneratedSpeech>()
-        val viewModel = AlarmEditorViewModel(
+        val viewModel = createViewModel(
             FakeSpeechGeneration { request ->
                 generatedSpeech(request.revision).also(outputs::add)
             },
-            FakeAudioPreview(),
         )
 
         viewModel.onMessageDraftChanged("First")
@@ -124,10 +128,7 @@ class AlarmEditorViewModelTest {
 
     @Test
     fun suggestionRequiresConfirmationForNonEmptyDraft() = runTest(dispatcher) {
-        val viewModel = AlarmEditorViewModel(
-            FakeSpeechGeneration { error("Not expected") },
-            FakeAudioPreview(),
-        )
+        val viewModel = createViewModel(FakeSpeechGeneration { error("Not expected") })
 
         viewModel.onMessageDraftChanged("Keep me")
         viewModel.onTryPhrase()
@@ -147,7 +148,7 @@ class AlarmEditorViewModelTest {
             attempt++
             if (attempt == 1) error("offline") else generatedSpeech(request.revision)
         }
-        val viewModel = AlarmEditorViewModel(generator, FakeAudioPreview())
+        val viewModel = createViewModel(generator)
 
         viewModel.onMessageDraftChanged("Try again")
         viewModel.onGenerateAudio()
@@ -162,10 +163,7 @@ class AlarmEditorViewModelTest {
 
     @Test
     fun timeoutBecomesRetryableError() = runTest(dispatcher) {
-        val viewModel = AlarmEditorViewModel(
-            FakeSpeechGeneration { awaitCancellation() },
-            FakeAudioPreview(),
-        )
+        val viewModel = createViewModel(FakeSpeechGeneration { awaitCancellation() })
 
         viewModel.onMessageDraftChanged("Slow request")
         viewModel.onGenerateAudio()
@@ -179,11 +177,42 @@ class AlarmEditorViewModelTest {
         assertTrue(viewModel.uiState.value.canGenerate)
     }
 
+    @Test
+    fun repeatedSaveCreatesOneDisabledDraftWithoutGenerating() = runTest(dispatcher) {
+        val generator = FakeSpeechGeneration { error("Generation must not run while saving") }
+        val repository = FakeAlarmRepository()
+        val viewModel = createViewModel(generator, repository)
+        viewModel.startSession(null)
+        viewModel.onLabelChanged("Morning walk")
+
+        viewModel.onSave()
+        viewModel.onSave()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.saveCount)
+        assertEquals(0, generator.requests.size)
+        assertFalse(repository.values.value.single().alarm.configuredEnabled)
+    }
+
+    @Test
+    fun configurationReentryKeepsUnsavedDraft() = runTest(dispatcher) {
+        val viewModel = createViewModel(FakeSpeechGeneration { error("Not expected") })
+        viewModel.startSession(null)
+        viewModel.onMessageDraftChanged("Keep across rotation")
+
+        viewModel.onLeaveEditor()
+        viewModel.startSession(null)
+
+        assertEquals("Keep across rotation", viewModel.uiState.value.messageDraft)
+        assertTrue(viewModel.uiState.value.isDirty)
+    }
+
     private fun generatedSpeech(revision: Long): GeneratedSpeech {
         val file = File(outputDirectory, "audio-$revision-${System.nanoTime()}.mp3").apply {
             writeBytes(byteArrayOf(1, 2, 3))
         }
         return GeneratedSpeech(
+            assetId = "asset-$revision-${System.nanoTime()}",
             file = file,
             durationMillis = 2_000L,
             sourceRevision = revision,
@@ -191,6 +220,21 @@ class AlarmEditorViewModelTest {
             generationLatencyMillis = 100L,
         )
     }
+
+    private fun createViewModel(
+        generator: SpeechGeneration,
+        repository: FakeAlarmRepository = FakeAlarmRepository(),
+    ): AlarmEditorViewModel = AlarmEditorViewModel(
+        generator,
+        FakeAudioPreview(),
+        repository,
+        FakeFileStore(),
+        NextOccurrenceCalculator(),
+        object : TimeProvider {
+            override fun now(): Instant = Instant.parse("2026-10-13T06:00:00Z")
+            override fun zoneId(): ZoneId = ZoneId.of("UTC")
+        },
+    )
 }
 
 private class FakeSpeechGeneration(
@@ -211,4 +255,24 @@ private class FakeAudioPreview : AudioPreview {
     override fun pause() = Unit
     override fun stop() = Unit
     override fun release() = Unit
+}
+
+private class FakeAlarmRepository : AlarmRepository {
+    val values = MutableStateFlow<List<AlarmWithAudio>>(emptyList())
+    var saveCount = 0
+    override fun observeAll() = values
+    override suspend fun get(id: String): AlarmWithAudio? = values.value.firstOrNull { it.alarm.id == id }
+    override suspend fun save(alarm: Alarm) {
+        saveCount++
+        values.value = values.value.filterNot { it.alarm.id == alarm.id } + AlarmWithAudio(alarm, null)
+    }
+    override suspend fun delete(id: String) { values.value = values.value.filterNot { it.alarm.id == id } }
+}
+
+private class FakeFileStore : AudioAssetFileStore {
+    override fun relativePath(file: File) = file.name
+    override fun resolve(relativePath: String) = File(relativePath)
+    override fun isReadable(relativePath: String) = File(relativePath).isFile
+    override fun completedFiles() = emptyList<File>()
+    override suspend fun validatedDuration(file: File) = 2_000L
 }

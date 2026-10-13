@@ -3,6 +3,7 @@ package com.yavin.wakeupsamurai.ui.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
@@ -25,19 +26,29 @@ fun WakeUpSamuraiNavHost(
     NavDisplay(
         backStack = backStack,
         modifier = modifier,
-        onBack = { backStack.popIfTop(AlarmEditorKey) },
+        onBack = { alarmEditorViewModel.onBackRequested() },
         entryProvider = entryProvider {
             entry<AlarmListKey> {
                 val uiState by alarmListViewModel.uiState.collectAsStateWithLifecycle()
                 AlarmListScreen(
                     uiState = uiState,
                     onAddAlarm = dropUnlessResumed {
-                        backStack.pushIfNotTop(AlarmEditorKey)
+                        backStack.pushEditorIfAbsentOnTop(AlarmEditorKey())
                     },
+                    onOpenAlarm = { id -> backStack.pushEditorIfAbsentOnTop(AlarmEditorKey(id)) },
+                    onEnabledChanged = alarmListViewModel::setConfiguredEnabled,
                 )
             }
-            entry<AlarmEditorKey> {
+            entry<AlarmEditorKey> { key ->
                 val uiState by alarmEditorViewModel.uiState.collectAsStateWithLifecycle()
+                LaunchedEffect(key.alarmId) {
+                    alarmEditorViewModel.startSession(key.alarmId)
+                }
+                LaunchedEffect(key) {
+                    alarmEditorViewModel.closeEvents.collect {
+                        backStack.popIfTop(key)
+                    }
+                }
                 DisposableEffect(alarmEditorViewModel) {
                     onDispose(alarmEditorViewModel::onLeaveEditor)
                 }
@@ -51,9 +62,18 @@ fun WakeUpSamuraiNavHost(
                     onCancelGeneration = alarmEditorViewModel::onCancelGeneration,
                     onRetryGeneration = alarmEditorViewModel::onRetryGeneration,
                     onTogglePreview = alarmEditorViewModel::onTogglePreview,
-                    onBack = dropUnlessResumed {
-                        backStack.popIfTop(AlarmEditorKey)
-                    },
+                    onLabelChanged = alarmEditorViewModel::onLabelChanged,
+                    onTimeChanged = alarmEditorViewModel::onTimeChanged,
+                    onRepeatDayToggled = alarmEditorViewModel::onRepeatDayToggled,
+                    onConfiguredEnabledChanged = alarmEditorViewModel::onConfiguredEnabledChanged,
+                    onRestoreAudioText = alarmEditorViewModel::onRestoreAudioText,
+                    onSave = alarmEditorViewModel::onSave,
+                    onDeleteRequested = alarmEditorViewModel::onDeleteRequested,
+                    onConfirmDelete = alarmEditorViewModel::onConfirmDelete,
+                    onDismissDelete = alarmEditorViewModel::onDismissDelete,
+                    onConfirmDiscard = alarmEditorViewModel::onConfirmDiscard,
+                    onDismissDiscard = alarmEditorViewModel::onDismissDiscard,
+                    onBack = alarmEditorViewModel::onBackRequested,
                 )
             }
         },

@@ -6,7 +6,7 @@
     <string name="add_alarm">Add alarm</string>
     <string name="editor_title">What are we waking up for?</string>
     <string name="editor_hint">A walk before the city wakes, one more chapter, pancakes…</string>
-    <string name="draft_notice">Draft only — this text is not saved. Audio changes only after you choose Generate.</string>
+    <string name="draft_notice">Editing text does not change existing audio. Choose Generate to create a matching track.</string>
     <string name="back">Back</string>
     <string name="try_phrase">Try a phrase</string>
     <string name="suggestion_replace_title">Replace this draft?</string>

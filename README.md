@@ -13,9 +13,15 @@ then save and enable the alarm.
 
 ## Status
 
-Step 1 (project foundation) provides a buildable application shell, an empty
-alarm list, and typed Navigation 3 navigation to a draft-only alarm editor.
-Alarm persistence, audio, permissions, and scheduling are not implemented yet.
+Steps 1–3 provide the Compose foundation, experimental direct Edge TTS generation
+and Media3 preview, plus Room-backed alarm definitions with stable IDs, reusable
+audio-asset metadata, time/repeat editing, and next-occurrence calculation.
+
+System scheduling is deliberately not implemented yet: the enabled switch records
+the user's configured intent, but saved alarms do not ring. Completed audio lives
+under durable app-owned `files/speech` storage and is not removed when a preview is
+replaced or an alarm is deleted. A later audio-library milestone will own explicit
+asset deletion and cleanup.
 
 ## Foundation stack and SDK choices
 
@@ -36,8 +42,12 @@ Alarm persistence, audio, permissions, and scheduling are not implemented yet.
   screen, navigation, and theme packages; data/domain packages will be added
   only when their milestones introduce real responsibilities.
 
-Room, Media3, networking, DataStore, and alarm scheduling dependencies are
-intentionally absent from Step 1.
+Room 2.8.5 stores alarm definitions and audio metadata with an exported schema.
+Media3 and OkHttp support the bounded Step 2 preview/generation experiment.
+Core-library desugaring 2.1.5 makes the pure `java.time` schedule policy
+available down to the existing `minSdk 24` without raising the SDK floor.
+DataStore and Android alarm scheduling remain absent because this milestone does
+not need them.
 
 ## Roadmap
 

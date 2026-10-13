@@ -41,6 +41,13 @@ including older generations and results that finish after their editor revision 
 Only the current revision can replace the editor preview. Audio-library UI and explicit asset
 deletion/cleanup are deferred.
 
+From Step 3 onward, each completed generation is also registered in Room as an audio asset with a
+stable ID, relative app-owned path, source text, voice/language, creation time, and known duration.
+Alarms reference asset IDs, so multiple alarms can share one track. Deleting an alarm, leaving the
+editor, or generating a replacement never deletes completed assets. Existing valid files from the
+Step 2 `files/speech` directory are imported on startup with only recoverable metadata; unknown
+source text, voice, language, and creation time remain unknown rather than being guessed.
+
 The 45-second editor timeout and explicit Cancel action cancel the WebSocket without blocking the
 main thread. Editing during generation also cancels the current request. Duplicate Generate taps
 are ignored. A failed request can be retried for the current revision, while a previous valid asset
