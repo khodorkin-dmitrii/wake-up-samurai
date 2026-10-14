@@ -2,6 +2,10 @@ package com.yavin.wakeupsamurai.di
 
 import com.yavin.wakeupsamurai.audio.AudioPreview
 import com.yavin.wakeupsamurai.audio.Media3AudioPreview
+import com.yavin.wakeupsamurai.audio.MediaRecorderVoiceRecorder
+import com.yavin.wakeupsamurai.audio.VoiceRecorder
+import com.yavin.wakeupsamurai.audio.RecordingValidator
+import com.yavin.wakeupsamurai.audio.LocalRecordingValidator
 import com.yavin.wakeupsamurai.tts.EdgeSpeechGeneration
 import com.yavin.wakeupsamurai.tts.SpeechGeneration
 import dagger.Binds
@@ -23,6 +27,13 @@ abstract class AudioBindingsModule {
     @Binds
     @Singleton
     abstract fun bindAudioPreview(implementation: Media3AudioPreview): AudioPreview
+
+    @Binds
+    @Singleton
+    abstract fun bindVoiceRecorder(implementation: MediaRecorderVoiceRecorder): VoiceRecorder
+
+    @Binds
+    abstract fun bindRecordingValidator(implementation: LocalRecordingValidator): RecordingValidator
 }
 
 @Module

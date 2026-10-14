@@ -20,6 +20,7 @@
     <string name="generation_generating">Generating audio…</string>
     <string name="generation_ready">Audio ready</string>
     <string name="generation_outdated">Audio ready, but it belongs to an older draft.</string>
+    <string name="saved_audio_selected">Saved audio selected</string>
     <string name="generation_error">Couldn’t generate audio: %1$s</string>
     <string name="play_audio">Play</string>
     <string name="pause_audio">Pause</string>

@@ -14,7 +14,13 @@ data class Alarm(
     val audioAssetId: String?,
     val createdAt: Instant,
     val updatedAt: Instant,
+    val audioSelectionKind: AudioSelectionKind? = null,
 )
+
+enum class AudioSelectionKind {
+    GENERATED_FOR_TEXT,
+    SAVED_ASSET,
+}
 
 data class AudioAsset(
     val id: String,

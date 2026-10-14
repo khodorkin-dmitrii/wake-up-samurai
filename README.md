@@ -51,17 +51,17 @@ not need them.
 
 ## Roadmap
 
-1. **Foundation** — project setup, theme, Navigation 3, dependency injection,
+- [x] **Foundation** — project setup, theme, Navigation 3, dependency injection,
    testing baseline, and an empty alarm list.
-2. **Alarm editor** — create and edit an alarm, choose time and repeat days,
+- [x] **Alarm editor** — create and edit an alarm, choose time and repeat days,
    preview the next occurrence, and protect unsaved changes.
-3. **Local audio** — run an Edge TTS feasibility spike, generate and validate a
+- [x] **Local audio** — run an Edge TTS feasibility spike, generate and validate a
    durable local track, record voice messages, and preview either source.
-4. **Persistence and scheduling** — store alarms with stable IDs, schedule the
+- [ ] **Persistence and scheduling** — store alarms with stable IDs, schedule the
    next exact occurrence, and reconcile schedules after edits and system events.
-5. **Ringing** — reliable foreground playback, notification/full-screen entry,
+- [ ] **Ringing** — reliable foreground playback, notification/full-screen entry,
    dismiss and idempotent snooze, plus a bundled fallback sound.
-6. **Readiness and hardening** — contextual permission guidance, recovery from
+- [ ] **Readiness and hardening** — contextual permission guidance, recovery from
    blocked capabilities, stale-delivery protection, and device-level checks.
 
 Deferred ideas such as imported audio, voice selection, transcription,

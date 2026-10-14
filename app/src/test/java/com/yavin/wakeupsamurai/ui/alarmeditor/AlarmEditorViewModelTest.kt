@@ -2,6 +2,8 @@ package com.yavin.wakeupsamurai.ui.alarmeditor
 
 import com.yavin.wakeupsamurai.audio.AudioPreview
 import com.yavin.wakeupsamurai.audio.AudioPreviewState
+import com.yavin.wakeupsamurai.audio.VoiceRecorder
+import com.yavin.wakeupsamurai.audio.RecordingValidator
 import com.yavin.wakeupsamurai.tts.GeneratedSpeech
 import com.yavin.wakeupsamurai.tts.SpeechGeneration
 import com.yavin.wakeupsamurai.tts.SpeechGenerationRequest
@@ -13,6 +15,9 @@ import com.yavin.wakeupsamurai.domain.alarm.AlarmWithAudio
 import com.yavin.wakeupsamurai.domain.alarm.NextOccurrenceCalculator
 import com.yavin.wakeupsamurai.domain.alarm.TimeProvider
 import com.yavin.wakeupsamurai.domain.alarm.Alarm
+import com.yavin.wakeupsamurai.domain.alarm.AudioAsset
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetRepository
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetUsageRegistry
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.CompletableDeferred
@@ -207,6 +212,169 @@ class AlarmEditorViewModelTest {
         assertTrue(viewModel.uiState.value.isDirty)
     }
 
+    @Test
+    fun selectingSavedAudioKeepsDraftAndDoesNotMarkTrackOutdated() = runTest(dispatcher) {
+        val savedFile = File(outputDirectory, "saved.mp3").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        val asset = AudioAsset(
+            id = "shared-asset",
+            relativePath = savedFile.absolutePath,
+            sourceText = "A different, saved message",
+            voice = "test-voice",
+            languageTag = "en-US",
+            createdAt = Instant.EPOCH,
+            durationMillis = 2_000L,
+        )
+        val viewModel = createViewModel(
+            generator = FakeSpeechGeneration { error("Not expected") },
+            audioAssets = FakeAudioAssetRepository(listOf(asset)),
+        )
+        advanceUntilIdle()
+        viewModel.startSession(null)
+        viewModel.onMessageDraftChanged("Keep this alarm draft")
+
+        assertTrue(viewModel.onSelectSavedAudio(asset.id))
+
+        assertEquals("Keep this alarm draft", viewModel.uiState.value.messageDraft)
+        assertEquals(asset.id, viewModel.uiState.value.generatedAudio?.assetId)
+        assertFalse(viewModel.uiState.value.generatedAudio?.isTextSynchronized ?: true)
+        assertFalse(viewModel.uiState.value.isGeneratedAudioOutdated)
+    }
+
+    @Test
+    fun leavingSavedAudioPickerDoesNotChangeCurrentSelection() = runTest(dispatcher) {
+        val generated = generatedSpeech(revision = 1L)
+        val viewModel = createViewModel(FakeSpeechGeneration { generated })
+        viewModel.onMessageDraftChanged("Current")
+        viewModel.onGenerateAudio()
+        advanceUntilIdle()
+
+        viewModel.onLeaveSavedAudioPicker()
+
+        assertEquals(generated.assetId, viewModel.uiState.value.generatedAudio?.assetId)
+    }
+
+    @Test
+    fun unavailableSavedAudioIsShownButCannotBeSelected() = runTest(dispatcher) {
+        val asset = AudioAsset(
+            id = "missing-asset",
+            relativePath = File(outputDirectory, "missing.mp3").absolutePath,
+            sourceText = null,
+            voice = null,
+            languageTag = null,
+            createdAt = null,
+            durationMillis = null,
+        )
+        val viewModel = createViewModel(
+            generator = FakeSpeechGeneration { error("Not expected") },
+            audioAssets = FakeAudioAssetRepository(listOf(asset)),
+        )
+        advanceUntilIdle()
+
+        assertFalse(viewModel.savedAudioPickerUiState.value.assets.single().isAvailable)
+        assertFalse(viewModel.onSelectSavedAudio(asset.id))
+        assertNull(viewModel.uiState.value.generatedAudio)
+    }
+
+    @Test
+    fun savingSavedAudioUsesSharedAssetReferenceWithoutGenerating() = runTest(dispatcher) {
+        val savedFile = File(outputDirectory, "shared.mp3").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        val asset = AudioAsset("shared", savedFile.absolutePath, null, null, null, null, 2_000L)
+        val repository = FakeAlarmRepository()
+        val generator = FakeSpeechGeneration { error("Generation must not run") }
+        val viewModel = createViewModel(generator, repository, FakeAudioAssetRepository(listOf(asset)))
+        advanceUntilIdle()
+        viewModel.startSession(null)
+        assertTrue(viewModel.onSelectSavedAudio(asset.id))
+
+        viewModel.onSave()
+        advanceUntilIdle()
+
+        assertEquals(asset.id, repository.values.value.single().alarm.audioAssetId)
+        assertEquals(
+            com.yavin.wakeupsamurai.domain.alarm.AudioSelectionKind.SAVED_ASSET,
+            repository.values.value.single().alarm.audioSelectionKind,
+        )
+        assertEquals(0, generator.requests.size)
+    }
+
+    @Test
+    fun keepingRecordingSelectsNewAssetWithoutReplacingUntilKeep() = runTest(dispatcher) {
+        val old = generatedSpeech(revision = 1L)
+        val recorder = FakeVoiceRecorder(outputDirectory)
+        val assets = FakeAudioAssetRepository()
+        val viewModel = createViewModel(
+            generator = FakeSpeechGeneration { old },
+            audioAssets = assets,
+            voiceRecorder = recorder,
+        )
+        viewModel.onMessageDraftChanged("Existing")
+        viewModel.onGenerateAudio()
+        advanceUntilIdle()
+
+        viewModel.onRecordVoiceRequested()
+        viewModel.onMicrophonePermissionResult(granted = true, permanentlyDenied = false)
+        viewModel.onStopRecording()
+        advanceUntilIdle()
+
+        assertEquals(old.assetId, viewModel.uiState.value.generatedAudio?.assetId)
+        assertTrue(viewModel.uiState.value.recordingState is RecordingState.Reviewing)
+
+        viewModel.onKeepRecording()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.recordingState is RecordingState.Idle)
+        assertTrue(viewModel.uiState.value.generatedAudio?.assetId != old.assetId)
+        assertEquals(1, assets.registered.size)
+        assertTrue(assets.registered.single().relativePath.contains("voice-"))
+    }
+
+    @Test
+    fun discardingRecordingPreservesPreviousSelectedAsset() = runTest(dispatcher) {
+        val old = generatedSpeech(revision = 1L)
+        val recorder = FakeVoiceRecorder(outputDirectory)
+        val viewModel = createViewModel(
+            generator = FakeSpeechGeneration { old },
+            voiceRecorder = recorder,
+        )
+        viewModel.onMessageDraftChanged("Existing")
+        viewModel.onGenerateAudio()
+        advanceUntilIdle()
+        viewModel.onRecordVoiceRequested()
+        viewModel.onMicrophonePermissionResult(granted = true, permanentlyDenied = false)
+
+        viewModel.onDiscardRecording()
+
+        assertEquals(old.assetId, viewModel.uiState.value.generatedAudio?.assetId)
+        assertTrue(viewModel.uiState.value.recordingState is RecordingState.Idle)
+        assertTrue(recorder.discardCount > 0)
+    }
+
+    @Test
+    fun permanentMicrophoneDenialKeepsRecordingIdleAndShowsSettingsState() = runTest(dispatcher) {
+        val viewModel = createViewModel(FakeSpeechGeneration { error("Not expected") })
+
+        viewModel.onRecordVoiceRequested()
+        viewModel.onMicrophonePermissionResult(granted = false, permanentlyDenied = true)
+
+        assertTrue(viewModel.uiState.value.recordingState is RecordingState.PermissionPermanentlyDenied)
+    }
+
+    @Test
+    fun backgroundingDiscardsUnfinishedRecording() = runTest(dispatcher) {
+        val recorder = FakeVoiceRecorder(outputDirectory)
+        val viewModel = createViewModel(
+            generator = FakeSpeechGeneration { error("Not expected") },
+            voiceRecorder = recorder,
+        )
+        viewModel.onRecordVoiceRequested()
+        viewModel.onMicrophonePermissionResult(granted = true, permanentlyDenied = false)
+
+        viewModel.onHostBackgrounded()
+
+        assertTrue(viewModel.uiState.value.recordingState is RecordingState.Idle)
+        assertTrue(recorder.discardCount > 0)
+    }
+
     private fun generatedSpeech(revision: Long): GeneratedSpeech {
         val file = File(outputDirectory, "audio-$revision-${System.nanoTime()}.mp3").apply {
             writeBytes(byteArrayOf(1, 2, 3))
@@ -224,10 +392,16 @@ class AlarmEditorViewModelTest {
     private fun createViewModel(
         generator: SpeechGeneration,
         repository: FakeAlarmRepository = FakeAlarmRepository(),
+        audioAssets: FakeAudioAssetRepository = FakeAudioAssetRepository(),
+        voiceRecorder: VoiceRecorder = FakeVoiceRecorder(outputDirectory),
     ): AlarmEditorViewModel = AlarmEditorViewModel(
         generator,
         FakeAudioPreview(),
+        voiceRecorder,
+        FakeRecordingValidator(),
         repository,
+        audioAssets,
+        FakeAudioAssetUsageRegistry(),
         FakeFileStore(),
         NextOccurrenceCalculator(),
         object : TimeProvider {
@@ -235,6 +409,35 @@ class AlarmEditorViewModelTest {
             override fun zoneId(): ZoneId = ZoneId.of("UTC")
         },
     )
+}
+
+private class FakeVoiceRecorder(
+    private val directory: File,
+) : VoiceRecorder {
+    private var temporary: File? = null
+    var discardCount = 0
+
+    override fun start(): File = File(directory, "recording-temp-${System.nanoTime()}.m4a").also {
+        it.writeBytes(byteArrayOf(1, 2, 3))
+        temporary = it
+    }
+
+    override fun stop(): File = requireNotNull(temporary)
+
+    override fun promote(recording: File): File = File(directory, "voice-${System.nanoTime()}.m4a").also {
+        recording.renameTo(it)
+        temporary = null
+    }
+
+    override fun discard() {
+        discardCount++
+        temporary?.delete()
+        temporary = null
+    }
+}
+
+private class FakeRecordingValidator : RecordingValidator {
+    override suspend fun validate(file: File): Long = 2_000L
 }
 
 private class FakeSpeechGeneration(
@@ -269,10 +472,32 @@ private class FakeAlarmRepository : AlarmRepository {
     override suspend fun delete(id: String) { values.value = values.value.filterNot { it.alarm.id == id } }
 }
 
+private class FakeAudioAssetRepository(
+    assets: List<AudioAsset> = emptyList(),
+) : AudioAssetRepository {
+    private val values = MutableStateFlow(assets)
+    val registered = mutableListOf<AudioAsset>()
+    override fun observeAll() = values
+    override suspend fun get(id: String): AudioAsset? = values.value.firstOrNull { it.id == id }
+    override suspend fun register(asset: AudioAsset): AudioAsset {
+        registered += asset
+        values.value = values.value.filterNot { it.id == asset.id } + asset
+        return asset
+    }
+    override suspend fun importExistingCompletedFiles() = Unit
+}
+
 private class FakeFileStore : AudioAssetFileStore {
     override fun relativePath(file: File) = file.name
     override fun resolve(relativePath: String) = File(relativePath)
     override fun isReadable(relativePath: String) = File(relativePath).isFile
     override fun completedFiles() = emptyList<File>()
     override suspend fun validatedDuration(file: File) = 2_000L
+}
+
+private class FakeAudioAssetUsageRegistry : AudioAssetUsageRegistry {
+    private var assetId: String? = null
+    override fun setEditorDraftAsset(assetId: String?) { this.assetId = assetId }
+    override fun isInUse(assetId: String): Boolean = this.assetId == assetId
+    override suspend fun <T> withWriteLock(block: suspend () -> T): T = block()
 }

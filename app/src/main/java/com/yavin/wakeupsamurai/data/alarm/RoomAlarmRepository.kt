@@ -9,8 +9,10 @@ import com.yavin.wakeupsamurai.data.local.AudioAssetEntity
 import com.yavin.wakeupsamurai.domain.alarm.Alarm
 import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
 import com.yavin.wakeupsamurai.domain.alarm.AlarmWithAudio
+import com.yavin.wakeupsamurai.domain.alarm.AudioSelectionKind
 import com.yavin.wakeupsamurai.domain.alarm.AudioAsset
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetRepository
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetUsageRegistry
 import java.nio.charset.StandardCharsets
 import java.time.DayOfWeek
 import java.time.Instant
@@ -24,13 +26,16 @@ import kotlinx.coroutines.flow.map
 @Singleton
 class RoomAlarmRepository @Inject constructor(
     private val alarmDao: AlarmDao,
+    private val usageRegistry: AudioAssetUsageRegistry,
 ) : AlarmRepository {
     override fun observeAll(): Flow<List<AlarmWithAudio>> = alarmDao.observeAll().map { rows ->
         rows.map(AlarmWithAudioEntity::toDomain)
     }
 
     override suspend fun get(id: String): AlarmWithAudio? = alarmDao.get(id)?.toDomain()
-    override suspend fun save(alarm: Alarm) = alarmDao.upsert(alarm.toEntity())
+    override suspend fun save(alarm: Alarm) = usageRegistry.withWriteLock {
+        alarmDao.upsert(alarm.toEntity())
+    }
     override suspend fun delete(id: String) = alarmDao.delete(id)
 }
 
@@ -39,6 +44,10 @@ class RoomAudioAssetRepository @Inject constructor(
     private val audioAssetDao: AudioAssetDao,
     private val storage: AudioAssetFileStore,
 ) : AudioAssetRepository {
+    override fun observeAll(): Flow<List<AudioAsset>> = audioAssetDao.observeAll().map { rows ->
+        rows.map(AudioAssetEntity::toDomain)
+    }
+
     override suspend fun get(id: String): AudioAsset? = audioAssetDao.get(id)?.toDomain()
     override suspend fun register(asset: AudioAsset): AudioAsset {
         val existing = audioAssetDao.getByPath(asset.relativePath)
@@ -79,6 +88,7 @@ private fun Alarm.toEntity() = AlarmEntity(
     audioAssetId = audioAssetId,
     createdAtEpochMillis = createdAt.toEpochMilli(),
     updatedAtEpochMillis = updatedAt.toEpochMilli(),
+    audioSelectionKind = audioSelectionKind?.name,
 )
 
 private fun AlarmWithAudioEntity.toDomain() = AlarmWithAudio(
@@ -95,6 +105,7 @@ private fun AlarmWithAudioEntity.toDomain() = AlarmWithAudio(
         audioAssetId = alarm.audioAssetId,
         createdAt = Instant.ofEpochMilli(alarm.createdAtEpochMillis),
         updatedAt = Instant.ofEpochMilli(alarm.updatedAtEpochMillis),
+        audioSelectionKind = alarm.audioSelectionKind?.let(AudioSelectionKind::valueOf),
     ),
     audioAsset = audioAsset?.toDomain(),
 )

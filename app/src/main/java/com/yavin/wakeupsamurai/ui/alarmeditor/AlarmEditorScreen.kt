@@ -1,5 +1,14 @@
 package com.yavin.wakeupsamurai.ui.alarmeditor
 
+import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,9 +46,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.yavin.wakeupsamurai.R
 import com.yavin.wakeupsamurai.ui.theme.WakeUpSamuraiTheme
 import java.util.Locale
@@ -58,6 +69,13 @@ fun AlarmEditorScreen(
     onCancelGeneration: () -> Unit,
     onRetryGeneration: () -> Unit,
     onTogglePreview: () -> Unit,
+    onRecordVoiceRequested: () -> Unit,
+    onMicrophonePermissionResult: (Boolean, Boolean) -> Unit,
+    onStopRecording: () -> Unit,
+    onToggleRecordingPreview: () -> Unit,
+    onKeepRecording: () -> Unit,
+    onDiscardRecording: () -> Unit,
+    onChooseSavedAudio: () -> Unit,
     onLabelChanged: (String) -> Unit,
     onTimeChanged: (Int, Int) -> Unit,
     onRepeatDayToggled: (DayOfWeek) -> Unit,
@@ -73,6 +91,12 @@ fun AlarmEditorScreen(
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
+    val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val permanentlyDenied = !granted &&
+            context.findActivity()?.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) == false
+        onMicrophonePermissionResult(granted, permanentlyDenied)
+    }
     val locale = LocalConfiguration.current.locales[0]
     var showTimePicker by remember { mutableStateOf(false) }
 
@@ -233,6 +257,91 @@ fun AlarmEditorScreen(
                 }
             }
 
+            OutlinedButton(onClick = onChooseSavedAudio, modifier = Modifier.fillMaxWidth()) {
+                Text("Choose saved audio")
+            }
+
+            when (val recording = uiState.recordingState) {
+                RecordingState.Idle,
+                RecordingState.PermissionDenied,
+                is RecordingState.Error,
+                -> {
+                    if (recording is RecordingState.PermissionDenied) {
+                        Text(
+                            "Microphone access was denied. Allow it to record a voice message.",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    if (recording is RecordingState.Error) {
+                        Text(recording.message, color = MaterialTheme.colorScheme.error)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            focusManager.clearFocus()
+                            onRecordVoiceRequested()
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                onMicrophonePermissionResult(true, false)
+                            } else {
+                                microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Record voice") }
+                }
+
+                RecordingState.AwaitingPermission -> {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Text("Waiting for microphone permission…", modifier = Modifier.padding(16.dp))
+                    }
+                }
+
+                RecordingState.PermissionPermanentlyDenied -> {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Microphone access is unavailable. Enable it in app settings to record a voice message.")
+                            OutlinedButton(
+                                onClick = {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = Uri.fromParts("package", context.packageName, null)
+                                        },
+                                    )
+                                },
+                            ) { Text("Open app settings") }
+                        }
+                    }
+                }
+
+                is RecordingState.Recording -> {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Recording ${formatDuration(recording.elapsedMillis)}", style = MaterialTheme.typography.titleMedium)
+                            Text("Recording stays in this editor only until you choose Keep.")
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = onStopRecording) { Text("Stop") }
+                                OutlinedButton(onClick = onDiscardRecording) { Text("Cancel") }
+                            }
+                        }
+                    }
+                }
+
+                is RecordingState.Reviewing -> {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Voice recording ready", style = MaterialTheme.typography.titleMedium)
+                            Text("Duration: ${formatDuration(recording.durationMillis)}")
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = onToggleRecordingPreview) {
+                                    Text(if (uiState.isPreviewPlaying) "Pause" else "Play")
+                                }
+                                Button(onClick = onKeepRecording) { Text("Keep recording") }
+                            }
+                            OutlinedButton(onClick = onDiscardRecording) { Text("Discard / record again") }
+                        }
+                    }
+                }
+            }
+
             uiState.generatedAudio?.let { audio ->
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
@@ -241,33 +350,40 @@ fun AlarmEditorScreen(
                     ) {
                         Text(
                             text = stringResource(
-                                if (uiState.isGeneratedAudioOutdated) R.string.generation_outdated
-                                else R.string.generation_ready,
+                                if (uiState.generatedAudio.isTextSynchronized && uiState.isGeneratedAudioOutdated) R.string.generation_outdated
+                                else if (uiState.generatedAudio.isTextSynchronized) R.string.generation_ready
+                                else R.string.saved_audio_selected
                             ),
                             style = MaterialTheme.typography.titleMedium,
-                            color = if (uiState.isGeneratedAudioOutdated) {
+                            color = if (uiState.generatedAudio.isTextSynchronized && uiState.isGeneratedAudioOutdated) {
                                 MaterialTheme.colorScheme.error
                             } else {
                                 MaterialTheme.colorScheme.onSurface
                             },
                         )
-                        Text(
-                            stringResource(
-                                R.string.audio_duration,
-                                formatDuration(audio.durationMillis),
-                            ),
-                        )
-                        Text(
-                            stringResource(
-                                R.string.generation_latency,
-                                String.format(
-                                    Locale.US,
-                                    "%.1f",
-                                    audio.generationLatencyMillis / 1_000.0,
+                        if (audio.durationMillis > 0L) {
+                            Text(
+                                stringResource(
+                                    R.string.audio_duration,
+                                    formatDuration(audio.durationMillis),
                                 ),
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                            )
+                        } else {
+                            Text("Duration unavailable")
+                        }
+                        if (audio.isTextSynchronized) {
+                            Text(
+                                stringResource(
+                                    R.string.generation_latency,
+                                    String.format(
+                                        Locale.US,
+                                        "%.1f",
+                                        audio.generationLatencyMillis / 1_000.0,
+                                    ),
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                         Button(onClick = onTogglePreview) {
                             Text(
                                 stringResource(
@@ -370,6 +486,13 @@ private fun AlarmEditorScreenPreview() {
             onCancelGeneration = {},
             onRetryGeneration = {},
             onTogglePreview = {},
+            onRecordVoiceRequested = {},
+            onMicrophonePermissionResult = { _, _ -> },
+            onStopRecording = {},
+            onToggleRecordingPreview = {},
+            onKeepRecording = {},
+            onDiscardRecording = {},
+            onChooseSavedAudio = {},
             onLabelChanged = {},
             onTimeChanged = { _, _ -> },
             onRepeatDayToggled = {},
@@ -384,4 +507,10 @@ private fun AlarmEditorScreenPreview() {
             onBack = {},
         )
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

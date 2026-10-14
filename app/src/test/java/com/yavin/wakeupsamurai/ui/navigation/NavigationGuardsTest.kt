@@ -7,6 +7,15 @@ import org.junit.Test
 
 class NavigationGuardsTest {
     @Test
+    fun savedAudioPickerGuardRejectsDuplicateDestination() {
+        val stack = mutableListOf<androidx.navigation3.runtime.NavKey>(AlarmListKey, AlarmEditorKey())
+
+        assertTrue(stack.pushSavedAudioPickerIfAbsentOnTop())
+        assertFalse(stack.pushSavedAudioPickerIfAbsentOnTop())
+        assertEquals(listOf(AlarmListKey, AlarmEditorKey(), SavedAudioPickerKey), stack)
+    }
+
+    @Test
     fun editorGuardRejectsRapidNavigationToAnotherEditor() {
         val stack = mutableListOf<androidx.navigation3.runtime.NavKey>(AlarmListKey)
         assertTrue(stack.pushEditorIfAbsentOnTop(AlarmEditorKey("first")))

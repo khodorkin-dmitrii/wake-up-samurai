@@ -19,3 +19,15 @@ internal fun MutableList<androidx.navigation3.runtime.NavKey>.pushEditorIfAbsent
     add(destination)
     return true
 }
+
+internal fun MutableList<androidx.navigation3.runtime.NavKey>.pushSavedAudioPickerIfAbsentOnTop(): Boolean {
+    if (lastOrNull() is SavedAudioPickerKey) return false
+    add(SavedAudioPickerKey)
+    return true
+}
+
+internal fun MutableList<androidx.navigation3.runtime.NavKey>.pushAudioLibraryIfAbsentOnTop(): Boolean {
+    if (lastOrNull() is AudioLibraryKey) return false
+    add(AudioLibraryKey)
+    return true
+}

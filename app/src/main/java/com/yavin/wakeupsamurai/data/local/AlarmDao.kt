@@ -16,6 +16,12 @@ interface AlarmDao {
     @Query("SELECT * FROM alarms WHERE id = :id")
     suspend fun get(id: String): AlarmWithAudioEntity?
 
+    @Query("SELECT * FROM alarms")
+    fun observeEntities(): Flow<List<AlarmEntity>>
+
+    @Query("SELECT * FROM alarms WHERE audioAssetId = :assetId ORDER BY createdAtEpochMillis")
+    suspend fun referencingAssets(assetId: String): List<AlarmEntity>
+
     @Upsert
     suspend fun upsert(alarm: AlarmEntity)
 
@@ -25,11 +31,17 @@ interface AlarmDao {
 
 @Dao
 interface AudioAssetDao {
+    @Query("SELECT * FROM audio_assets ORDER BY createdAtEpochMillis DESC, id DESC")
+    fun observeAll(): Flow<List<AudioAssetEntity>>
+
     @Query("SELECT * FROM audio_assets WHERE id = :id")
     suspend fun get(id: String): AudioAssetEntity?
 
     @Query("SELECT * FROM audio_assets WHERE relativePath = :relativePath")
     suspend fun getByPath(relativePath: String): AudioAssetEntity?
+
+    @Query("DELETE FROM audio_assets WHERE id = :id")
+    suspend fun delete(id: String)
 
     @Upsert
     suspend fun upsert(asset: AudioAssetEntity)

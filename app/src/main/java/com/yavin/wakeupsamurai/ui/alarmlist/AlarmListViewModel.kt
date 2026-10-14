@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yavin.wakeupsamurai.data.audio.AudioAssetFileStore
 import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
+import com.yavin.wakeupsamurai.domain.alarm.AudioSelectionKind
 import com.yavin.wakeupsamurai.domain.alarm.NextOccurrenceCalculator
 import com.yavin.wakeupsamurai.domain.alarm.TimeProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -42,7 +43,9 @@ class AlarmListViewModel @Inject constructor(
                     val problem = when {
                         audio == null -> "Add or generate audio before enabling."
                         !storage.isReadable(audio.relativePath) -> "The selected audio file is unavailable."
-                        audio.sourceText != alarm.messageText.trim() -> "The message changed; regenerate audio or restore its text."
+                        alarm.audioSelectionKind != AudioSelectionKind.SAVED_ASSET &&
+                            audio.sourceText != alarm.messageText.trim() ->
+                            "The message changed; regenerate audio or restore its text."
                         else -> null
                     }
                     val next = if (alarm.repeatDays.isEmpty()) alarm.resolvedOneShotAt else {
@@ -73,7 +76,9 @@ class AlarmListViewModel @Inject constructor(
                 val problem = when {
                     asset == null -> "Generate audio before enabling this alarm."
                     !storage.isReadable(asset.relativePath) -> "The audio file is unavailable."
-                    asset.sourceText != alarm.messageText.trim() -> "Regenerate audio or restore its original text first."
+                    alarm.audioSelectionKind != AudioSelectionKind.SAVED_ASSET &&
+                        asset.sourceText != alarm.messageText.trim() ->
+                        "Regenerate audio or restore its original text first."
                     else -> null
                 }
                 if (problem != null) {

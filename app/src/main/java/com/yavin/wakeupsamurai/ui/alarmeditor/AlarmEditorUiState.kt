@@ -27,15 +27,26 @@ data class AlarmEditorUiState(
     val validationMessage: String? = null,
     val hasPersistedAlarm: Boolean = false,
     val audioSourceText: String? = null,
+    val recordingState: RecordingState = RecordingState.Idle,
 ) {
     val canGenerate: Boolean
         get() = messageDraft.isNotBlank() && generationStatus !is GenerationStatus.Generating
 
     val isGeneratedAudioOutdated: Boolean
-        get() = generatedAudio != null && audioSourceText != messageDraft.trim()
+        get() = generatedAudio?.isTextSynchronized == true && audioSourceText != messageDraft.trim()
 
     val canRestoreAudioText: Boolean
         get() = isGeneratedAudioOutdated && audioSourceText != null
+}
+
+sealed interface RecordingState {
+    data object Idle : RecordingState
+    data object AwaitingPermission : RecordingState
+    data object PermissionDenied : RecordingState
+    data object PermissionPermanentlyDenied : RecordingState
+    data class Recording(val elapsedMillis: Long = 0L) : RecordingState
+    data class Reviewing(val durationMillis: Long) : RecordingState
+    data class Error(val message: String) : RecordingState
 }
 
 sealed interface GenerationStatus {
@@ -50,4 +61,20 @@ data class GeneratedAudioUi(
     val sourceRevision: Long,
     val durationMillis: Long,
     val generationLatencyMillis: Long,
+    val isTextSynchronized: Boolean = true,
+)
+
+data class SavedAudioPickerUiState(
+    val assets: List<SavedAudioItemUi> = emptyList(),
+    val isLoading: Boolean = true,
+    val previewingAssetId: String? = null,
+    val previewErrorMessage: String? = null,
+)
+
+data class SavedAudioItemUi(
+    val id: String,
+    val title: String,
+    val durationMillis: Long?,
+    val isAvailable: Boolean,
+    val unavailableReason: String? = null,
 )

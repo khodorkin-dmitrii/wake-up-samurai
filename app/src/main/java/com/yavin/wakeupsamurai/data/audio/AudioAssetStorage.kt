@@ -24,12 +24,31 @@ class AudioAssetStorage @Inject constructor(
         it.isFile && it.canRead() && it.length() > 0L
     } == true
 
-    override fun completedFiles(): List<File> = File(context.filesDir, "speech")
-        .listFiles { file -> file.isFile && file.extension.equals("mp3", ignoreCase = true) }
-        ?.toList()
-        .orEmpty()
+    override fun completedFiles(): List<File> = buildList {
+        addAll(
+            File(context.filesDir, "speech")
+                .listFiles { file -> file.isFile && file.extension.equals("mp3", ignoreCase = true) }
+                ?.toList()
+                .orEmpty(),
+        )
+        addAll(
+            File(context.filesDir, "recordings")
+                .listFiles { file ->
+                    file.isFile && file.name.startsWith("voice-") &&
+                        file.extension.equals("m4a", ignoreCase = true)
+                }
+                ?.toList()
+                .orEmpty(),
+        )
+    }
 
-    override suspend fun validatedDuration(file: File): Long? = runCatching { validator.validate(file) }.getOrNull()
+    fun discardAbandonedTemporaryRecordings() {
+        File(context.filesDir, "recordings")
+            .listFiles { file -> file.isFile && file.name.startsWith("recording-") && file.extension.equals("m4a", true) }
+            ?.forEach(File::delete)
+    }
+
+    override suspend fun validatedDuration(file: File): Long? = validator.readableLocalDuration(file)
 }
 
 interface AudioAssetFileStore {

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-only
+// Adapted from rany2/edge-tts 7.3.0, commit 6d3fff402a77dd4d43cccf074d042252770e41c2.
+// Wake Up, Samurai changes: Android transport, storage, lifecycle, DI, and error handling.
 package com.yavin.wakeupsamurai.tts
 
 import android.content.Context
@@ -9,7 +11,6 @@ import com.yavin.wakeupsamurai.domain.alarm.AudioAsset
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetRepository
 import java.io.File
 import java.io.FileOutputStream
-import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -32,7 +33,8 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 
 /**
- * Small Android-native client compatible with the protocol used by rany2/edge-tts 7.2.8.
+ * Android-native adaptation of rany2/edge-tts 7.3.0
+ * (commit 6d3fff402a77dd4d43cccf074d042252770e41c2), notably constants.py and communicate.py.
  * The consumer Edge endpoint is undocumented and may change without notice. Protocol details
  * were adapted from edge-tts constants.py, drm.py, and communicate.py (LGPL-3.0); see the
  * repository's THIRD_PARTY_NOTICES.md and third_party/edge-tts-LICENSE.txt.
@@ -219,16 +221,9 @@ class EdgeSpeechGeneration @Inject constructor(
 
     private fun webSocketUrl(): String =
         "$WSS_URL&ConnectionId=${randomId()}&Sec-MS-GEC=${securityToken()}" +
-            "&Sec-MS-GEC-Version=$SEC_MS_GEC_VERSION"
+            "&Sec-MS-GEC-Version=${EdgeSecurityToken.SEC_MS_GEC_VERSION}"
 
-    private fun securityToken(): String {
-        val seconds = System.currentTimeMillis() / 1_000L + WINDOWS_EPOCH_SECONDS
-        val roundedSeconds = seconds - seconds % TOKEN_WINDOW_SECONDS
-        val ticks = roundedSeconds * WINDOWS_TICKS_PER_SECOND
-        return MessageDigest.getInstance("SHA-256")
-            .digest("$ticks$TRUSTED_CLIENT_TOKEN".encodeToByteArray())
-            .joinToString("") { byte -> "%02X".format(byte.toInt() and 0xFF) }
-    }
+    private fun securityToken(): String = EdgeSecurityToken.generate()
 
     private fun edgeTimestamp(): String = SimpleDateFormat(
         "EEE MMM dd yyyy HH:mm:ss 'GMT+0000 (Coordinated Universal Time)'",
@@ -260,11 +255,7 @@ class EdgeSpeechGeneration @Inject constructor(
     private companion object {
         const val OUTPUT_DIRECTORY = "speech"
         const val MAX_TEXT_BYTES = 4_096
-        const val WINDOWS_EPOCH_SECONDS = 11_644_473_600L
-        const val WINDOWS_TICKS_PER_SECOND = 10_000_000L
-        const val TOKEN_WINDOW_SECONDS = 300L
         const val TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
-        const val SEC_MS_GEC_VERSION = "1-143.0.3650.75"
         const val WSS_URL =
             "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1" +
                 "?TrustedClientToken=$TRUSTED_CLIENT_TOKEN"

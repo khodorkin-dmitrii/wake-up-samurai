@@ -3,9 +3,14 @@ package com.yavin.wakeupsamurai.ui.alarmeditor
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yavin.wakeupsamurai.audio.AudioPreview
+import com.yavin.wakeupsamurai.audio.VoiceRecorder
+import com.yavin.wakeupsamurai.audio.RecordingValidator
 import com.yavin.wakeupsamurai.data.audio.AudioAssetFileStore
 import com.yavin.wakeupsamurai.domain.alarm.Alarm
 import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetRepository
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetUsageRegistry
+import com.yavin.wakeupsamurai.domain.alarm.AudioSelectionKind
 import com.yavin.wakeupsamurai.domain.alarm.NextOccurrenceCalculator
 import com.yavin.wakeupsamurai.domain.alarm.TimeProvider
 import com.yavin.wakeupsamurai.tts.GeneratedSpeech
@@ -17,6 +22,7 @@ import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -30,13 +36,18 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 
 @HiltViewModel
 class AlarmEditorViewModel @Inject constructor(
     private val speechGeneration: SpeechGeneration,
     private val audioPreview: AudioPreview,
+    private val voiceRecorder: VoiceRecorder,
+    private val recordingValidator: RecordingValidator,
     private val alarmRepository: AlarmRepository,
+    private val audioAssetRepository: AudioAssetRepository,
+    private val assetUsageRegistry: AudioAssetUsageRegistry,
     private val storage: AudioAssetFileStore,
     private val calculator: NextOccurrenceCalculator,
     private val timeProvider: TimeProvider,
@@ -45,14 +56,22 @@ class AlarmEditorViewModel @Inject constructor(
     val uiState: StateFlow<AlarmEditorUiState> = _uiState.asStateFlow()
     private val _closeEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val closeEvents: SharedFlow<Unit> = _closeEvents.asSharedFlow()
+    private val _savedAudioPickerUiState = MutableStateFlow(SavedAudioPickerUiState())
+    val savedAudioPickerUiState: StateFlow<SavedAudioPickerUiState> = _savedAudioPickerUiState.asStateFlow()
 
     private var generationJob: Job? = null
     private var saveJob: Job? = null
+    private var recordingValidationJob: Job? = null
     private var activeRequestId = 0L
+    private var activeRecordingId = 0L
+    private var recordingTickerJob: Job? = null
+    private var recordingFile: File? = null
+    private var recordingStartedAtMillis: Long = 0L
     private var generatedSpeech: GeneratedSpeech? = null
     private var loadedAlarm: Alarm? = null
     private var activeSessionId: String? = null
     private var sessionActive = false
+    private var availableAudioAssets = emptyMap<String, com.yavin.wakeupsamurai.domain.alarm.AudioAsset>()
 
     init {
         viewModelScope.launch {
@@ -60,6 +79,35 @@ class AlarmEditorViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(isPreviewPlaying = previewState.isPlaying, previewErrorMessage = previewState.errorMessage)
                 }
+                _savedAudioPickerUiState.update {
+                    it.copy(
+                        previewErrorMessage = previewState.errorMessage,
+                        previewingAssetId = if (previewState.isPlaying) it.previewingAssetId else null,
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            audioAssetRepository.observeAll().collect { assets ->
+                availableAudioAssets = assets.associateBy { it.id }
+                _savedAudioPickerUiState.value = SavedAudioPickerUiState(
+                    assets = assets.map { asset ->
+                        val available = storage.isReadable(asset.relativePath)
+                        SavedAudioItemUi(
+                            id = asset.id,
+                            title = asset.sourceText?.takeIf { it.isNotBlank() }
+                                ?: if (asset.relativePath.substringAfterLast('/').startsWith("voice-")) {
+                                    "Voice recording"
+                                } else {
+                                    "Saved audio ${asset.id.take(8)}"
+                                },
+                            durationMillis = asset.durationMillis,
+                            isAvailable = available,
+                            unavailableReason = if (available) null else "Audio file unavailable",
+                        )
+                    },
+                    isLoading = false,
+                )
             }
         }
     }
@@ -68,6 +116,7 @@ class AlarmEditorViewModel @Inject constructor(
         if (sessionActive && activeSessionId == alarmId) return
         sessionActive = true
         activeSessionId = alarmId
+        assetUsageRegistry.setEditorDraftAsset(null)
         generationJob?.cancel()
         audioPreview.stop()
         _uiState.value = AlarmEditorUiState(isLoading = alarmId != null)
@@ -98,12 +147,19 @@ class AlarmEditorViewModel @Inject constructor(
                     )
                 }
             }
+            assetUsageRegistry.setEditorDraftAsset(asset?.id)
             _uiState.value = AlarmEditorUiState(
                 alarmId = row.alarm.id,
                 label = row.alarm.label,
                 messageDraft = row.alarm.messageText,
                 generatedAudio = asset?.let {
-                    GeneratedAudioUi(it.id, 0L, it.durationMillis ?: 0L, 0L)
+                    GeneratedAudioUi(
+                        assetId = it.id,
+                        sourceRevision = 0L,
+                        durationMillis = it.durationMillis ?: 0L,
+                        generationLatencyMillis = 0L,
+                        isTextSynchronized = row.alarm.audioSelectionKind != AudioSelectionKind.SAVED_ASSET,
+                    )
                 },
                 generationStatus = if (asset != null) GenerationStatus.Ready(0L) else GenerationStatus.Idle,
                 audioSourceText = asset?.sourceText,
@@ -179,11 +235,16 @@ class AlarmEditorViewModel @Inject constructor(
                 if (requestId != activeRequestId || _uiState.value.draftRevision != request.revision) return@launch
                 audioPreview.stop()
                 generatedSpeech = result
+                assetUsageRegistry.setEditorDraftAsset(result.assetId)
                 _uiState.update {
                     it.copy(
                         generationStatus = GenerationStatus.Ready(result.sourceRevision),
                         generatedAudio = GeneratedAudioUi(
-                            result.assetId, result.sourceRevision, result.durationMillis, result.generationLatencyMillis,
+                            result.assetId,
+                            result.sourceRevision,
+                            result.durationMillis,
+                            result.generationLatencyMillis,
+                            isTextSynchronized = true,
                         ),
                         audioSourceText = request.text.trim(),
                         isDirty = true,
@@ -204,8 +265,192 @@ class AlarmEditorViewModel @Inject constructor(
     fun onCancelGeneration() = cancelGeneration()
     fun onRetryGeneration() { if (_uiState.value.generationStatus is GenerationStatus.Error) onGenerateAudio() }
     fun onTogglePreview() {
+        if (_uiState.value.recordingState is RecordingState.Recording) return
         val speech = generatedSpeech ?: return
         if (_uiState.value.isPreviewPlaying) audioPreview.pause() else audioPreview.play(speech.file)
+    }
+
+    fun onRecordVoiceRequested() {
+        if (_uiState.value.recordingState is RecordingState.Recording ||
+            _uiState.value.recordingState is RecordingState.AwaitingPermission
+        ) return
+        audioPreview.stop()
+        _uiState.update { it.copy(recordingState = RecordingState.AwaitingPermission, previewErrorMessage = null) }
+    }
+
+    fun onMicrophonePermissionResult(granted: Boolean, permanentlyDenied: Boolean) {
+        if (_uiState.value.recordingState !is RecordingState.AwaitingPermission) return
+        if (!granted) {
+            _uiState.update {
+                it.copy(
+                    recordingState = if (permanentlyDenied) {
+                        RecordingState.PermissionPermanentlyDenied
+                    } else {
+                        RecordingState.PermissionDenied
+                    },
+                )
+            }
+            return
+        }
+        startRecording()
+    }
+
+    fun onStopRecording() {
+        if (_uiState.value.recordingState !is RecordingState.Recording) return
+        recordingTickerJob?.cancel()
+        recordingTickerJob = null
+        try {
+            recordingFile = voiceRecorder.stop()
+        } catch (exception: Exception) {
+            voiceRecorder.discard()
+            recordingFile = null
+            _uiState.update {
+                it.copy(recordingState = RecordingState.Error(exception.message ?: "Could not finish recording."))
+            }
+            return
+        }
+        val file = recordingFile ?: return
+        val recordingId = activeRecordingId
+        recordingValidationJob?.cancel()
+        recordingValidationJob = viewModelScope.launch {
+            val duration = runCatching { recordingValidator.validate(file) }
+            duration.onSuccess { validDuration ->
+                if (recordingId != activeRecordingId) return@onSuccess
+                _uiState.update { it.copy(recordingState = RecordingState.Reviewing(validDuration)) }
+            }.onFailure { exception ->
+                if (recordingId != activeRecordingId) return@onFailure
+                voiceRecorder.discard()
+                recordingFile = null
+                _uiState.update {
+                    it.copy(recordingState = RecordingState.Error(exception.message ?: "The recording is invalid."))
+                }
+            }
+        }
+    }
+
+    fun onToggleRecordingPreview() {
+        if (_uiState.value.recordingState !is RecordingState.Reviewing) return
+        val file = recordingFile?.takeIf { it.isFile && it.canRead() } ?: return
+        if (_uiState.value.isPreviewPlaying) audioPreview.pause() else audioPreview.play(file)
+    }
+
+    fun onKeepRecording() {
+        val file = recordingFile ?: return
+        val duration = (_uiState.value.recordingState as? RecordingState.Reviewing)?.durationMillis ?: return
+        viewModelScope.launch {
+            try {
+                audioPreview.stop()
+                val completed = voiceRecorder.promote(file)
+                recordingFile = completed
+                val asset = audioAssetRepository.register(
+                    com.yavin.wakeupsamurai.domain.alarm.AudioAsset(
+                        id = UUID.randomUUID().toString(),
+                        relativePath = storage.relativePath(completed),
+                        sourceText = null,
+                        voice = null,
+                        languageTag = null,
+                        createdAt = timeProvider.now(),
+                        durationMillis = duration,
+                    ),
+                )
+                recordingFile = null
+                generatedSpeech = GeneratedSpeech(
+                    assetId = asset.id,
+                    file = completed,
+                    durationMillis = duration,
+                    sourceRevision = _uiState.value.draftRevision,
+                    voice = "",
+                    generationLatencyMillis = 0L,
+                )
+                assetUsageRegistry.setEditorDraftAsset(asset.id)
+                _uiState.update {
+                    it.copy(
+                        generatedAudio = GeneratedAudioUi(
+                            assetId = asset.id,
+                            sourceRevision = it.draftRevision,
+                            durationMillis = duration,
+                            generationLatencyMillis = 0L,
+                            isTextSynchronized = false,
+                        ),
+                        generationStatus = GenerationStatus.Ready(it.draftRevision),
+                        audioSourceText = null,
+                        recordingState = RecordingState.Idle,
+                        isDirty = true,
+                    )
+                }
+            } catch (exception: Exception) {
+                _uiState.update {
+                    it.copy(recordingState = RecordingState.Error(exception.message ?: "Could not keep recording."))
+                }
+            }
+        }
+    }
+
+    fun onDiscardRecording() {
+        audioPreview.stop()
+        activeRecordingId++
+        recordingValidationJob?.cancel()
+        recordingValidationJob = null
+        recordingTickerJob?.cancel()
+        recordingTickerJob = null
+        voiceRecorder.discard()
+        recordingFile = null
+        _uiState.update { it.copy(recordingState = RecordingState.Idle) }
+    }
+
+    fun onHostBackgrounded() {
+        val recording = _uiState.value.recordingState
+        if (recording is RecordingState.Recording || recording is RecordingState.Reviewing) onDiscardRecording()
+    }
+
+    fun onToggleSavedAudioPreview(assetId: String) {
+        val asset = availableAudioAssets[assetId] ?: return
+        if (!storage.isReadable(asset.relativePath)) return
+        val file = storage.resolve(asset.relativePath) ?: return
+        val picker = _savedAudioPickerUiState.value
+        if (picker.previewingAssetId == assetId && _uiState.value.isPreviewPlaying) {
+            audioPreview.pause()
+        } else {
+            audioPreview.play(file)
+            _savedAudioPickerUiState.update { it.copy(previewingAssetId = assetId, previewErrorMessage = null) }
+        }
+    }
+
+    fun onSelectSavedAudio(assetId: String): Boolean {
+        val asset = availableAudioAssets[assetId] ?: return false
+        if (!storage.isReadable(asset.relativePath)) return false
+        val file = storage.resolve(asset.relativePath)?.takeIf { it.isFile && it.canRead() } ?: return false
+        audioPreview.stop()
+        generatedSpeech = GeneratedSpeech(
+            assetId = asset.id,
+            file = file,
+            durationMillis = asset.durationMillis ?: 0L,
+            sourceRevision = _uiState.value.draftRevision,
+            voice = asset.voice.orEmpty(),
+            generationLatencyMillis = 0L,
+        )
+        assetUsageRegistry.setEditorDraftAsset(asset.id)
+        _uiState.update {
+            it.copy(
+                generatedAudio = GeneratedAudioUi(
+                    assetId = asset.id,
+                    sourceRevision = it.draftRevision,
+                    durationMillis = asset.durationMillis ?: 0L,
+                    generationLatencyMillis = 0L,
+                    isTextSynchronized = false,
+                ),
+                generationStatus = GenerationStatus.Ready(it.draftRevision),
+                audioSourceText = asset.sourceText,
+                previewErrorMessage = null,
+                isDirty = true,
+            )
+        }
+        return true
+    }
+
+    fun onLeaveSavedAudioPicker() {
+        audioPreview.stop()
+        _savedAudioPickerUiState.update { it.copy(previewingAssetId = null, previewErrorMessage = null) }
     }
 
     fun onRestoreAudioText() {
@@ -231,7 +476,9 @@ class AlarmEditorViewModel @Inject constructor(
             val error = when {
                 audio == null -> "Generate audio before enabling this alarm."
                 !audio.file.isFile || !audio.file.canRead() -> "The selected audio file is unavailable."
-                state.audioSourceText != state.messageDraft.trim() -> "Regenerate audio or restore its original text before enabling."
+                state.generatedAudio?.isTextSynchronized == true &&
+                    state.audioSourceText != state.messageDraft.trim() ->
+                    "Regenerate audio or restore its original text before enabling."
                 else -> null
             }
             if (error != null) {
@@ -259,6 +506,11 @@ class AlarmEditorViewModel @Inject constructor(
                     audioAssetId = audio?.assetId,
                     createdAt = existing?.createdAt ?: now,
                     updatedAt = now,
+                    audioSelectionKind = when {
+                        audio == null -> null
+                        state.generatedAudio?.isTextSynchronized == true -> AudioSelectionKind.GENERATED_FOR_TEXT
+                        else -> AudioSelectionKind.SAVED_ASSET
+                    },
                 )
                 alarmRepository.save(alarm)
                 loadedAlarm = alarm
@@ -280,6 +532,9 @@ class AlarmEditorViewModel @Inject constructor(
     }
 
     fun onBackRequested() {
+        if (_uiState.value.recordingState is RecordingState.Recording ||
+            _uiState.value.recordingState is RecordingState.Reviewing
+        ) onDiscardRecording()
         if (_uiState.value.isDirty) _uiState.update { it.copy(showDiscardConfirmation = true) }
         else closeEditor()
     }
@@ -305,7 +560,9 @@ class AlarmEditorViewModel @Inject constructor(
 
     override fun onCleared() {
         generationJob?.cancel()
+        onDiscardRecording()
         audioPreview.release()
+        assetUsageRegistry.setEditorDraftAsset(null)
     }
 
     private fun edit(transform: AlarmEditorUiState.() -> AlarmEditorUiState) {
@@ -327,8 +584,40 @@ class AlarmEditorViewModel @Inject constructor(
         if (!sessionActive) return
         sessionActive = false
         cancelGeneration()
+        onDiscardRecording()
         audioPreview.release()
+        assetUsageRegistry.setEditorDraftAsset(null)
         _closeEvents.tryEmit(Unit)
+    }
+
+    private fun startRecording() {
+        try {
+            audioPreview.stop()
+            recordingFile = voiceRecorder.start()
+            activeRecordingId++
+            recordingStartedAtMillis = System.nanoTime() / 1_000_000L
+            _uiState.update { it.copy(recordingState = RecordingState.Recording()) }
+            recordingTickerJob?.cancel()
+            recordingTickerJob = viewModelScope.launch {
+                while (true) {
+                    delay(RECORDING_TICK_MILLIS)
+                    val elapsed = (System.nanoTime() / 1_000_000L - recordingStartedAtMillis).coerceAtLeast(0L)
+                    _uiState.update {
+                        if (it.recordingState is RecordingState.Recording) {
+                            it.copy(recordingState = RecordingState.Recording(elapsed))
+                        } else {
+                            it
+                        }
+                    }
+                }
+            }
+        } catch (exception: Exception) {
+            voiceRecorder.discard()
+            recordingFile = null
+            _uiState.update {
+                it.copy(recordingState = RecordingState.Error(exception.message ?: "Could not start recording."))
+            }
+        }
     }
     private fun formatOccurrence(instant: Instant): String {
         val value = instant.atZone(timeProvider.zoneId())
@@ -338,5 +627,6 @@ class AlarmEditorViewModel @Inject constructor(
     companion object {
         const val SUGGESTED_PHRASE = "Wake up (wake up)\nGrab a brush and put a little make-up"
         const val GENERATION_TIMEOUT_MILLIS = 45_000L
+        const val RECORDING_TICK_MILLIS = 250L
     }
 }

@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,6 +42,7 @@ fun AlarmListScreen(
     onAddAlarm: () -> Unit,
     onOpenAlarm: (String) -> Unit,
     onEnabledChanged: (String, Boolean) -> Unit,
+    onManageAudio: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val addAlarmLabel = stringResource(R.string.add_alarm)
@@ -49,7 +51,10 @@ fun AlarmListScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(title = { Text(stringResource(R.string.alarm_list_title)) })
+            TopAppBar(
+                title = { Text(stringResource(R.string.alarm_list_title)) },
+                actions = { TextButton(onClick = onManageAudio) { Text("Manage audio") } },
+            )
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
@@ -159,6 +164,7 @@ private fun AlarmListScreenPreview() {
             onAddAlarm = {},
             onOpenAlarm = {},
             onEnabledChanged = { _, _ -> },
+            onManageAudio = {},
         )
     }
 }

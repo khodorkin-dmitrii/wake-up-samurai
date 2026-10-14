@@ -43,6 +43,7 @@ data class AlarmEntity(
     val audioAssetId: String?,
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
+    val audioSelectionKind: String?,
 )
 
 data class AlarmWithAudioEntity(

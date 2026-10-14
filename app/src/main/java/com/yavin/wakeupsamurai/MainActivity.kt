@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.yavin.wakeupsamurai.ui.alarmeditor.AlarmEditorViewModel
 import com.yavin.wakeupsamurai.ui.alarmlist.AlarmListViewModel
+import com.yavin.wakeupsamurai.ui.audiolibrary.AudioLibraryViewModel
 import com.yavin.wakeupsamurai.ui.navigation.WakeUpSamuraiNavHost
 import com.yavin.wakeupsamurai.ui.theme.WakeUpSamuraiTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -24,6 +25,7 @@ import androidx.core.content.ContextCompat
 class MainActivity : ComponentActivity() {
     private val alarmListViewModel: AlarmListViewModel by viewModels()
     private val alarmEditorViewModel: AlarmEditorViewModel by viewModels()
+    private val audioLibraryViewModel: AudioLibraryViewModel by viewModels()
     private val timeChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) = refreshTimeDependentUi()
     }
@@ -41,6 +43,7 @@ class MainActivity : ComponentActivity() {
                     WakeUpSamuraiNavHost(
                         alarmListViewModel = alarmListViewModel,
                         alarmEditorViewModel = alarmEditorViewModel,
+                        audioLibraryViewModel = audioLibraryViewModel,
                     )
                 }
             }
@@ -67,6 +70,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        if (!isChangingConfigurations) {
+            alarmEditorViewModel.onHostBackgrounded()
+        }
         unregisterReceiver(timeChangeReceiver)
         super.onStop()
     }

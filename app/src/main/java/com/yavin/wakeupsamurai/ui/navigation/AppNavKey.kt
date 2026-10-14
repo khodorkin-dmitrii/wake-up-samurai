@@ -8,3 +8,9 @@ data object AlarmListKey : NavKey
 
 @Serializable
 data class AlarmEditorKey(val alarmId: String? = null) : NavKey
+
+@Serializable
+data object SavedAudioPickerKey : NavKey
+
+@Serializable
+data object AudioLibraryKey : NavKey
