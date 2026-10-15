@@ -12,12 +12,19 @@ class InMemoryAudioAssetUsageRegistry @Inject constructor() : AudioAssetUsageReg
 
     @Volatile
     private var editorDraftAssetId: String? = null
+    @Volatile
+    private var ringingAssetId: String? = null
 
     override fun setEditorDraftAsset(assetId: String?) {
         editorDraftAssetId = assetId
     }
 
-    override fun isInUse(assetId: String): Boolean = editorDraftAssetId == assetId
+    override fun setRingingAsset(assetId: String?) {
+        ringingAssetId = assetId
+    }
+
+    override fun isInUse(assetId: String): Boolean =
+        editorDraftAssetId == assetId || ringingAssetId == assetId
 
     override suspend fun <T> withWriteLock(block: suspend () -> T): T = mutex.withLock { block() }
 }

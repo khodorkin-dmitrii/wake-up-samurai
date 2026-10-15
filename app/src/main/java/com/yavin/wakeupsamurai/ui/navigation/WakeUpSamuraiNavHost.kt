@@ -51,6 +51,7 @@ fun WakeUpSamuraiNavHost(
                     onOpenAlarm = { id -> backStack.pushEditorIfAbsentOnTop(AlarmEditorKey(id)) },
                     onEnabledChanged = alarmListViewModel::setConfiguredEnabled,
                     onManageAudio = dropUnlessResumed { backStack.pushAudioLibraryIfAbsentOnTop() },
+                    onNotificationPermissionResult = alarmListViewModel::onNotificationPermissionResult,
                 )
             }
             entry<AlarmEditorKey> { key ->
@@ -89,6 +90,7 @@ fun WakeUpSamuraiNavHost(
                     onTimeChanged = alarmEditorViewModel::onTimeChanged,
                     onRepeatDayToggled = alarmEditorViewModel::onRepeatDayToggled,
                     onConfiguredEnabledChanged = alarmEditorViewModel::onConfiguredEnabledChanged,
+                    onNotificationPermissionResult = alarmEditorViewModel::onNotificationPermissionResult,
                     onRestoreAudioText = alarmEditorViewModel::onRestoreAudioText,
                     onSave = alarmEditorViewModel::onSave,
                     onDeleteRequested = alarmEditorViewModel::onDeleteRequested,

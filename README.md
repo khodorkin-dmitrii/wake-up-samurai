@@ -17,11 +17,12 @@ Steps 1–3 provide the Compose foundation, experimental direct Edge TTS generat
 and Media3 preview, plus Room-backed alarm definitions with stable IDs, reusable
 audio-asset metadata, time/repeat editing, and next-occurrence calculation.
 
-System scheduling is deliberately not implemented yet: the enabled switch records
-the user's configured intent, but saved alarms do not ring. Completed audio lives
-under durable app-owned `files/speech` storage and is not removed when a preview is
-replaced or an alarm is deleted. A later audio-library milestone will own explicit
-asset deletion and cleanup.
+Step 5A adds the first bounded execution path: a newly saved, enabled one-shot
+alarm is scheduled with `AlarmManager.setAlarmClock()`, then rings from its local
+audio in a foreground service. Recurring execution, reboot recovery, snooze and
+full-screen UI remain deliberately out of scope. Completed audio lives under
+durable app-owned storage and is not removed when a preview is replaced or an
+alarm is deleted.
 
 ## Foundation stack and SDK choices
 
@@ -46,8 +47,32 @@ Room 2.8.5 stores alarm definitions and audio metadata with an exported schema.
 Media3 and OkHttp support the bounded Step 2 preview/generation experiment.
 Core-library desugaring 2.1.5 makes the pure `java.time` schedule policy
 available down to the existing `minSdk 24` without raising the SDK floor.
-DataStore and Android alarm scheduling remain absent because this milestone does
-not need them.
+DataStore remains absent because this milestone does not need it. Android alarm
+scheduling uses the framework `AlarmManager`; it introduces no additional library.
+
+## One-shot alarm access policy
+
+The app uses `setAlarmClock()` for this alarm-clock use case. On Android 12+
+it checks `AlarmManager.canScheduleExactAlarms()` and, when needed, opens the
+system **Alarms & reminders** special-access screen for
+`SCHEDULE_EXACT_ALARM`. `setAlarmClock()` does not bypass that access check.
+
+On Android 13+ the app also asks for `POST_NOTIFICATIONS` when the user enables
+an alarm: the foreground service can start without that runtime permission, but
+the user needs the visible ongoing notification and its **Dismiss** action for
+this milestone. A denial leaves the configured alarm in a visible blocked state;
+the app never claims it was scheduled. Android 14+ media playback requirements
+are declared with `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, and
+`foregroundServiceType="mediaPlayback"`.
+
+The foreground service loops the selected readable local file for at most five
+minutes, or uses a bundled short fallback tone if the file cannot be read. A
+delivery carries an occurrence UUID and revision, so stale/repeated intents are
+rejected. While one alarm rings, a second concurrent one is marked skipped;
+this temporary policy avoids competing players and will be revisited with
+multi-alarm handling. The source of truth is still Room; system alarms are
+derived only after an explicit Save/enable action. Existing saved alarms are not
+activated by the Step 5A upgrade.
 
 ## Roadmap
 

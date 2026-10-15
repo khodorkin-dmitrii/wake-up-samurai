@@ -7,6 +7,14 @@ interface AlarmRepository {
     suspend fun get(id: String): AlarmWithAudio?
     suspend fun save(alarm: Alarm)
     suspend fun delete(id: String)
+    /** Atomically accepts one system delivery and rejects an old or repeated PendingIntent. */
+    suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long): Boolean
+    suspend fun finishOccurrence(
+        alarmId: String,
+        occurrenceId: String,
+        revision: Long,
+        finalState: AlarmSchedulingState,
+    ): Boolean
 }
 
 interface AudioAssetRepository {
@@ -43,6 +51,7 @@ interface AudioLibraryRepository {
 /** Coordinates asset deletion with editor drafts and writes of alarm references. */
 interface AudioAssetUsageRegistry {
     fun setEditorDraftAsset(assetId: String?)
+    fun setRingingAsset(assetId: String?)
     fun isInUse(assetId: String): Boolean
     suspend fun <T> withWriteLock(block: suspend () -> T): T
 }

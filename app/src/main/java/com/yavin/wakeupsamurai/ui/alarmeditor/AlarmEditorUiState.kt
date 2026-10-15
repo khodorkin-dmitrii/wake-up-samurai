@@ -1,6 +1,7 @@
 package com.yavin.wakeupsamurai.ui.alarmeditor
 
 import java.time.DayOfWeek
+import com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState
 
 data class AlarmEditorUiState(
     val isLoading: Boolean = false,
@@ -28,6 +29,8 @@ data class AlarmEditorUiState(
     val hasPersistedAlarm: Boolean = false,
     val audioSourceText: String? = null,
     val recordingState: RecordingState = RecordingState.Idle,
+    val schedulingState: AlarmSchedulingState = AlarmSchedulingState.NOT_SCHEDULED,
+    val schedulingAccessRequest: SchedulingAccessRequest? = null,
 ) {
     val canGenerate: Boolean
         get() = messageDraft.isNotBlank() && generationStatus !is GenerationStatus.Generating
@@ -63,6 +66,11 @@ data class GeneratedAudioUi(
     val generationLatencyMillis: Long,
     val isTextSynchronized: Boolean = true,
 )
+
+enum class SchedulingAccessRequest {
+    EXACT_ALARM,
+    NOTIFICATIONS,
+}
 
 data class SavedAudioPickerUiState(
     val assets: List<SavedAudioItemUi> = emptyList(),

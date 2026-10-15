@@ -80,6 +80,7 @@ fun AlarmEditorScreen(
     onTimeChanged: (Int, Int) -> Unit,
     onRepeatDayToggled: (DayOfWeek) -> Unit,
     onConfiguredEnabledChanged: (Boolean) -> Unit,
+    onNotificationPermissionResult: (Boolean) -> Unit,
     onRestoreAudioText: () -> Unit,
     onSave: () -> Unit,
     onDeleteRequested: () -> Unit,
@@ -96,6 +97,9 @@ fun AlarmEditorScreen(
         val permanentlyDenied = !granted &&
             context.findActivity()?.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) == false
         onMicrophonePermissionResult(granted, permanentlyDenied)
+    }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        onNotificationPermissionResult(it)
     }
     val locale = LocalConfiguration.current.locales[0]
     var showTimePicker by remember { mutableStateOf(false) }
@@ -430,14 +434,37 @@ fun AlarmEditorScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Enabled intent")
                     Text(
-                        "Scheduling is not implemented; this alarm will not ring yet.",
+                        when {
+                            uiState.repeatDays.isNotEmpty() -> "Recurring execution is not supported yet."
+                            uiState.schedulingState.name == "SCHEDULED" -> "Scheduled with Android."
+                            uiState.configuredEnabled -> "Save to request access and schedule this one-shot alarm."
+                            else -> "Enable and save to schedule this one-shot alarm."
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        color = if (uiState.repeatDays.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Switch(checked = uiState.configuredEnabled, onCheckedChange = onConfiguredEnabledChanged)
             }
             uiState.validationMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (uiState.schedulingAccessRequest == SchedulingAccessRequest.EXACT_ALARM) {
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                data = Uri.fromParts("package", context.packageName, null)
+                            },
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Allow alarms & reminders") }
+            }
+            if (uiState.schedulingAccessRequest == SchedulingAccessRequest.NOTIFICATIONS) {
+                OutlinedButton(
+                    onClick = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Allow notifications") }
+            }
             Button(
                 onClick = onSave,
                 enabled = !uiState.isSaving,
@@ -497,6 +524,7 @@ private fun AlarmEditorScreenPreview() {
             onTimeChanged = { _, _ -> },
             onRepeatDayToggled = {},
             onConfiguredEnabledChanged = {},
+            onNotificationPermissionResult = {},
             onRestoreAudioText = {},
             onSave = {},
             onDeleteRequested = {},

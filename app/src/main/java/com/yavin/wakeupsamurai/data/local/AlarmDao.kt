@@ -27,6 +27,34 @@ interface AlarmDao {
 
     @Query("DELETE FROM alarms WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("""
+        UPDATE alarms SET schedulingState = 'RINGING'
+        WHERE id = :alarmId
+          AND configuredEnabled = 1
+          AND scheduledOccurrenceId = :occurrenceId
+          AND scheduleRevision = :revision
+          AND schedulingState = 'SCHEDULED'
+    """)
+    suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long): Int
+
+    @Query("""
+        UPDATE alarms
+        SET configuredEnabled = 0,
+            schedulingState = :finalState,
+            scheduledOccurrenceId = NULL,
+            scheduledAtEpochMillis = NULL
+        WHERE id = :alarmId
+          AND scheduledOccurrenceId = :occurrenceId
+          AND scheduleRevision = :revision
+          AND schedulingState = 'RINGING'
+    """)
+    suspend fun finishRingingOccurrence(
+        alarmId: String,
+        occurrenceId: String,
+        revision: Long,
+        finalState: String,
+    ): Int
 }
 
 @Dao

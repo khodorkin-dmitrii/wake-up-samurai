@@ -8,6 +8,7 @@ import com.yavin.wakeupsamurai.data.local.AudioAssetDao
 import com.yavin.wakeupsamurai.data.local.AudioAssetEntity
 import com.yavin.wakeupsamurai.domain.alarm.Alarm
 import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
+import com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState
 import com.yavin.wakeupsamurai.domain.alarm.AlarmWithAudio
 import com.yavin.wakeupsamurai.domain.alarm.AudioSelectionKind
 import com.yavin.wakeupsamurai.domain.alarm.AudioAsset
@@ -37,6 +38,21 @@ class RoomAlarmRepository @Inject constructor(
         alarmDao.upsert(alarm.toEntity())
     }
     override suspend fun delete(id: String) = alarmDao.delete(id)
+
+    override suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long): Boolean =
+        alarmDao.claimScheduledOccurrence(alarmId, occurrenceId, revision) == 1
+
+    override suspend fun finishOccurrence(
+        alarmId: String,
+        occurrenceId: String,
+        revision: Long,
+        finalState: AlarmSchedulingState,
+    ): Boolean = alarmDao.finishRingingOccurrence(
+        alarmId = alarmId,
+        occurrenceId = occurrenceId,
+        revision = revision,
+        finalState = finalState.name,
+    ) == 1
 }
 
 @Singleton
@@ -89,6 +105,10 @@ private fun Alarm.toEntity() = AlarmEntity(
     createdAtEpochMillis = createdAt.toEpochMilli(),
     updatedAtEpochMillis = updatedAt.toEpochMilli(),
     audioSelectionKind = audioSelectionKind?.name,
+    scheduleRevision = scheduleRevision,
+    scheduledOccurrenceId = scheduledOccurrenceId,
+    scheduledAtEpochMillis = scheduledAt?.toEpochMilli(),
+    schedulingState = schedulingState.name,
 )
 
 private fun AlarmWithAudioEntity.toDomain() = AlarmWithAudio(
@@ -106,6 +126,11 @@ private fun AlarmWithAudioEntity.toDomain() = AlarmWithAudio(
         createdAt = Instant.ofEpochMilli(alarm.createdAtEpochMillis),
         updatedAt = Instant.ofEpochMilli(alarm.updatedAtEpochMillis),
         audioSelectionKind = alarm.audioSelectionKind?.let(AudioSelectionKind::valueOf),
+        scheduleRevision = alarm.scheduleRevision,
+        scheduledOccurrenceId = alarm.scheduledOccurrenceId,
+        scheduledAt = alarm.scheduledAtEpochMillis?.let(Instant::ofEpochMilli),
+        schedulingState = runCatching { AlarmSchedulingState.valueOf(alarm.schedulingState) }
+            .getOrDefault(AlarmSchedulingState.NOT_SCHEDULED),
     ),
     audioAsset = audioAsset?.toDomain(),
 )

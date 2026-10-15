@@ -1,6 +1,11 @@
 package com.yavin.wakeupsamurai.ui.alarmeditor
 
 import com.yavin.wakeupsamurai.audio.AudioPreview
+import com.yavin.wakeupsamurai.alarm.OneShotAlarmCoordinator
+import com.yavin.wakeupsamurai.alarm.OneShotAlarmScheduler
+import com.yavin.wakeupsamurai.alarm.PlatformScheduleResult
+import com.yavin.wakeupsamurai.alarm.ScheduledOccurrence
+import com.yavin.wakeupsamurai.alarm.SchedulingAccess
 import com.yavin.wakeupsamurai.audio.AudioPreviewState
 import com.yavin.wakeupsamurai.audio.VoiceRecorder
 import com.yavin.wakeupsamurai.audio.RecordingValidator
@@ -408,6 +413,7 @@ class AlarmEditorViewModelTest {
             override fun now(): Instant = Instant.parse("2026-10-13T06:00:00Z")
             override fun zoneId(): ZoneId = ZoneId.of("UTC")
         },
+        OneShotAlarmCoordinator(repository, FakeOneShotAlarmScheduler()),
     )
 }
 
@@ -470,6 +476,13 @@ private class FakeAlarmRepository : AlarmRepository {
         values.value = values.value.filterNot { it.alarm.id == alarm.id } + AlarmWithAudio(alarm, null)
     }
     override suspend fun delete(id: String) { values.value = values.value.filterNot { it.alarm.id == id } }
+    override suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long) = false
+    override suspend fun finishOccurrence(
+        alarmId: String,
+        occurrenceId: String,
+        revision: Long,
+        finalState: com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState,
+    ) = false
 }
 
 private class FakeAudioAssetRepository(
@@ -498,6 +511,13 @@ private class FakeFileStore : AudioAssetFileStore {
 private class FakeAudioAssetUsageRegistry : AudioAssetUsageRegistry {
     private var assetId: String? = null
     override fun setEditorDraftAsset(assetId: String?) { this.assetId = assetId }
+    override fun setRingingAsset(assetId: String?) = Unit
     override fun isInUse(assetId: String): Boolean = this.assetId == assetId
     override suspend fun <T> withWriteLock(block: suspend () -> T): T = block()
+}
+
+private class FakeOneShotAlarmScheduler : OneShotAlarmScheduler {
+    override fun access() = SchedulingAccess.GRANTED
+    override fun schedule(occurrence: ScheduledOccurrence) = PlatformScheduleResult.Scheduled
+    override fun cancel(occurrence: ScheduledOccurrence) = Unit
 }

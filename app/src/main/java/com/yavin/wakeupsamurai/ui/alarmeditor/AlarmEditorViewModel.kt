@@ -3,6 +3,8 @@ package com.yavin.wakeupsamurai.ui.alarmeditor
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yavin.wakeupsamurai.audio.AudioPreview
+import com.yavin.wakeupsamurai.alarm.AlarmSaveResult
+import com.yavin.wakeupsamurai.alarm.OneShotAlarmCoordinator
 import com.yavin.wakeupsamurai.audio.VoiceRecorder
 import com.yavin.wakeupsamurai.audio.RecordingValidator
 import com.yavin.wakeupsamurai.data.audio.AudioAssetFileStore
@@ -51,6 +53,7 @@ class AlarmEditorViewModel @Inject constructor(
     private val storage: AudioAssetFileStore,
     private val calculator: NextOccurrenceCalculator,
     private val timeProvider: TimeProvider,
+    private val alarmCoordinator: OneShotAlarmCoordinator,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AlarmEditorUiState())
     val uiState: StateFlow<AlarmEditorUiState> = _uiState.asStateFlow()
@@ -169,6 +172,7 @@ class AlarmEditorViewModel @Inject constructor(
                 configuredEnabled = row.alarm.configuredEnabled,
                 resolvedOneShotEpochMillis = row.alarm.resolvedOneShotAt?.toEpochMilli(),
                 hasPersistedAlarm = true,
+                schedulingState = row.alarm.schedulingState,
             )
             refreshNextOccurrence()
         }
@@ -512,19 +516,38 @@ class AlarmEditorViewModel @Inject constructor(
                         else -> AudioSelectionKind.SAVED_ASSET
                     },
                 )
-                alarmRepository.save(alarm)
-                loadedAlarm = alarm
-                _uiState.update {
-                    it.copy(
-                        alarmId = id,
-                        isSaving = false,
-                        isDirty = false,
-                        hasPersistedAlarm = true,
-                        resolvedOneShotEpochMillis = alarm.resolvedOneShotAt?.toEpochMilli(),
-                        isScheduleDirty = false,
-                    )
+                when (val result = alarmCoordinator.save(alarm)) {
+                    is AlarmSaveResult.Scheduled -> completeSave(result.alarm, close = true)
+                    is AlarmSaveResult.SavedWithoutSchedule -> {
+                        completeSave(result.alarm, close = !result.alarm.configuredEnabled)
+                        if (result.alarm.configuredEnabled) {
+                            _uiState.update {
+                                it.copy(validationMessage = "Recurring alarm execution is not supported yet.")
+                            }
+                        }
+                    }
+                    is AlarmSaveResult.BlockedExactAlarmAccess -> {
+                        completeSave(result.alarm, close = false)
+                        _uiState.update {
+                            it.copy(
+                                validationMessage = "Allow alarms & reminders to schedule this alarm.",
+                                schedulingAccessRequest = SchedulingAccessRequest.EXACT_ALARM,
+                            )
+                        }
+                    }
+                    is AlarmSaveResult.BlockedNotificationPermission -> {
+                        completeSave(result.alarm, close = false)
+                        _uiState.update {
+                            it.copy(
+                                validationMessage = "Allow notifications so the ringing alarm can be dismissed.",
+                                schedulingAccessRequest = SchedulingAccessRequest.NOTIFICATIONS,
+                            )
+                        }
+                    }
+                    is AlarmSaveResult.Failed -> _uiState.update {
+                        it.copy(isSaving = false, validationMessage = result.message)
+                    }
                 }
-                closeEditor()
             } catch (exception: Exception) {
                 _uiState.update { it.copy(isSaving = false, validationMessage = exception.message ?: "Could not save alarm.") }
             }
@@ -549,9 +572,25 @@ class AlarmEditorViewModel @Inject constructor(
         val id = _uiState.value.alarmId ?: return
         if (saveJob?.isActive == true) return
         saveJob = viewModelScope.launch {
-            alarmRepository.delete(id)
+            alarmCoordinator.delete(id)
             closeEditor()
         }
+    }
+
+    /** Called from the host after Android's exact-alarm settings panel returns. */
+    fun onSchedulingAccessReturned() {
+        val id = _uiState.value.alarmId ?: return
+        if (_uiState.value.schedulingAccessRequest != SchedulingAccessRequest.EXACT_ALARM) return
+        retryScheduling(id)
+    }
+
+    fun onNotificationPermissionResult(granted: Boolean) {
+        if (_uiState.value.schedulingAccessRequest != SchedulingAccessRequest.NOTIFICATIONS) return
+        if (!granted) {
+            _uiState.update { it.copy(schedulingAccessRequest = null, validationMessage = "Notifications are required for the Dismiss action.") }
+            return
+        }
+        _uiState.value.alarmId?.let(::retryScheduling)
     }
 
     fun onLeaveEditor() {
@@ -588,6 +627,41 @@ class AlarmEditorViewModel @Inject constructor(
         audioPreview.release()
         assetUsageRegistry.setEditorDraftAsset(null)
         _closeEvents.tryEmit(Unit)
+    }
+
+    private fun retryScheduling(id: String) {
+        if (saveJob?.isActive == true) return
+        saveJob = viewModelScope.launch {
+            _uiState.update { it.copy(isSaving = true, validationMessage = null, schedulingAccessRequest = null) }
+            when (val result = alarmCoordinator.retry(id)) {
+                is AlarmSaveResult.Scheduled -> completeSave(result.alarm, close = true)
+                is AlarmSaveResult.BlockedExactAlarmAccess -> _uiState.update {
+                    it.copy(isSaving = false, validationMessage = "Alarm access is still disabled.")
+                }
+                is AlarmSaveResult.BlockedNotificationPermission -> _uiState.update {
+                    it.copy(isSaving = false, validationMessage = "Notification permission is still required.", schedulingAccessRequest = SchedulingAccessRequest.NOTIFICATIONS)
+                }
+                is AlarmSaveResult.SavedWithoutSchedule -> completeSave(result.alarm, close = false)
+                is AlarmSaveResult.Failed -> _uiState.update { it.copy(isSaving = false, validationMessage = result.message) }
+            }
+        }
+    }
+
+    private fun completeSave(alarm: Alarm, close: Boolean) {
+        loadedAlarm = alarm
+        _uiState.update {
+            it.copy(
+                alarmId = alarm.id,
+                isSaving = false,
+                isDirty = false,
+                hasPersistedAlarm = true,
+                resolvedOneShotEpochMillis = alarm.resolvedOneShotAt?.toEpochMilli(),
+                isScheduleDirty = false,
+                schedulingState = alarm.schedulingState,
+                schedulingAccessRequest = null,
+            )
+        }
+        if (close) closeEditor()
     }
 
     private fun startRecording() {

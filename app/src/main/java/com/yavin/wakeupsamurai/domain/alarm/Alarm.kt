@@ -15,7 +15,24 @@ data class Alarm(
     val createdAt: Instant,
     val updatedAt: Instant,
     val audioSelectionKind: AudioSelectionKind? = null,
+    val scheduleRevision: Long = 0L,
+    val scheduledOccurrenceId: String? = null,
+    val scheduledAt: Instant? = null,
+    val schedulingState: AlarmSchedulingState = AlarmSchedulingState.NOT_SCHEDULED,
 )
+
+/** The persisted state of the derived Android alarm, not the user's enabled intent. */
+enum class AlarmSchedulingState {
+    NOT_SCHEDULED,
+    SCHEDULED,
+    RINGING,
+    BLOCKED_EXACT_ALARM_ACCESS,
+    BLOCKED_NOTIFICATION_PERMISSION,
+    UNSUPPORTED_RECURRING,
+    COMPLETED,
+    SKIPPED,
+    FAILED,
+}
 
 enum class AudioSelectionKind {
     GENERATED_FOR_TEXT,

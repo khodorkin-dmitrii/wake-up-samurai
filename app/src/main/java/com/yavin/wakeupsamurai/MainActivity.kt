@@ -53,6 +53,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshTimeDependentUi()
+        alarmEditorViewModel.onSchedulingAccessReturned()
+        alarmListViewModel.onSchedulingAccessReturned()
     }
 
     override fun onStart() {

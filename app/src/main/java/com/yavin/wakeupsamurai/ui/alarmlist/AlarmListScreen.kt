@@ -1,5 +1,11 @@
 package com.yavin.wakeupsamurai.ui.alarmlist
 
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.Switch
 import androidx.compose.material3.MaterialTheme
@@ -43,9 +50,14 @@ fun AlarmListScreen(
     onOpenAlarm: (String) -> Unit,
     onEnabledChanged: (String, Boolean) -> Unit,
     onManageAudio: () -> Unit,
+    onNotificationPermissionResult: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val addAlarmLabel = stringResource(R.string.add_alarm)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        onNotificationPermissionResult(it)
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -107,10 +119,30 @@ fun AlarmListScreen(
             ) {
                 item {
                     Text(
-                        "Scheduling is not implemented yet. Configured alarms will not ring.",
-                        color = MaterialTheme.colorScheme.error,
+                        "One-shot alarms can ring after Android access is granted. Recurring execution is not supported yet.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                }
+                if (uiState.schedulingAccessRequest == SchedulingAccessRequest.EXACT_ALARM) {
+                    item {
+                        OutlinedButton(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                        data = Uri.fromParts("package", context.packageName, null)
+                                    },
+                                )
+                            },
+                        ) { Text("Allow alarms & reminders") }
+                    }
+                }
+                if (uiState.schedulingAccessRequest == SchedulingAccessRequest.NOTIFICATIONS) {
+                    item {
+                        OutlinedButton(onClick = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
+                            Text("Allow notifications")
+                        }
+                    }
                 }
                 uiState.message?.let { message ->
                     item { Text(message, color = MaterialTheme.colorScheme.error) }
@@ -165,6 +197,7 @@ private fun AlarmListScreenPreview() {
             onOpenAlarm = {},
             onEnabledChanged = { _, _ -> },
             onManageAudio = {},
+            onNotificationPermissionResult = {},
         )
     }
 }

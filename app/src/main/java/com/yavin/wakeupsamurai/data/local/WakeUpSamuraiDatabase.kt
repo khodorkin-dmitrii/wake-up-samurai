@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, AudioAssetEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class WakeUpSamuraiDatabase : RoomDatabase() {
@@ -18,5 +18,14 @@ abstract class WakeUpSamuraiDatabase : RoomDatabase() {
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE alarms ADD COLUMN audioSelectionKind TEXT")
+    }
+}
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE alarms ADD COLUMN scheduleRevision INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE alarms ADD COLUMN scheduledOccurrenceId TEXT")
+        db.execSQL("ALTER TABLE alarms ADD COLUMN scheduledAtEpochMillis INTEGER")
+        db.execSQL("ALTER TABLE alarms ADD COLUMN schedulingState TEXT NOT NULL DEFAULT 'NOT_SCHEDULED'")
     }
 }

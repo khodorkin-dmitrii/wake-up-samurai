@@ -44,6 +44,10 @@ data class AlarmEntity(
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
     val audioSelectionKind: String?,
+    val scheduleRevision: Long,
+    val scheduledOccurrenceId: String?,
+    val scheduledAtEpochMillis: Long?,
+    val schedulingState: String,
 )
 
 data class AlarmWithAudioEntity(
