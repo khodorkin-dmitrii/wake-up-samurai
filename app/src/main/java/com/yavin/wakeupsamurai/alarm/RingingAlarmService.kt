@@ -215,7 +215,6 @@ class RingingAlarmService : Service() {
             .setFullScreenIntent(screenIntent, true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .setSilent(true)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .addAction(0, "Dismiss", dismissIntent)

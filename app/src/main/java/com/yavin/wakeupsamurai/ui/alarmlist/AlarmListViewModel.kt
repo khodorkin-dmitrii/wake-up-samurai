@@ -80,8 +80,12 @@ class AlarmListViewModel @Inject constructor(
                         snoozedUntil = if (alarm.schedulingState == AlarmSchedulingState.SNOOZED) {
                             alarm.scheduledAt?.let { occurrenceSummary(it, now, zone) }
                         } else null,
+                        nextOccurrenceAt = next,
+                        hasScheduledUpcomingOccurrence = alarm.configuredEnabled &&
+                            alarm.schedulingState in setOf(AlarmSchedulingState.SCHEDULED, AlarmSchedulingState.SNOOZED),
                     )
                     },
+                    currentTime = now,
                     message = transient.message,
                     schedulingAccessRequest = transient.schedulingAccessRequest,
                     fullScreenIntentUnavailable = alarms.any { it.alarm.configuredEnabled } &&

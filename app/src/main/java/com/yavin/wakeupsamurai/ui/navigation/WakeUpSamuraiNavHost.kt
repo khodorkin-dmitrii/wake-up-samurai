@@ -53,6 +53,7 @@ fun WakeUpSamuraiNavHost(
                     onCancelSnooze = alarmListViewModel::cancelSnooze,
                     onManageAudio = dropUnlessResumed { backStack.pushAudioLibraryIfAbsentOnTop() },
                     onNotificationPermissionResult = alarmListViewModel::onNotificationPermissionResult,
+                    onTimeTick = alarmListViewModel::refreshTime,
                 )
             }
             entry<AlarmEditorKey> { key ->
