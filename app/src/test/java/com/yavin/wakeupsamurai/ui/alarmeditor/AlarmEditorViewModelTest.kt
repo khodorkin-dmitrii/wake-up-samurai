@@ -483,6 +483,10 @@ private class FakeAlarmRepository : AlarmRepository {
         revision: Long,
         finalState: com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState,
     ) = false
+    override suspend fun replaceRingingWithSnooze(
+        alarmId: String, ringingOccurrenceId: String, ringingRevision: Long,
+        snoozeOccurrenceId: String, snoozeRevision: Long, snoozedAtEpochMillis: Long,
+    ) = false
 }
 
 private class FakeAudioAssetRepository(

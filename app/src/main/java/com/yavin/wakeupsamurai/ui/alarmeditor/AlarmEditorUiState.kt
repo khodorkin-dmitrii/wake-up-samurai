@@ -70,6 +70,8 @@ data class GeneratedAudioUi(
 enum class SchedulingAccessRequest {
     EXACT_ALARM,
     NOTIFICATIONS,
+    APP_NOTIFICATIONS,
+    ALARM_CHANNEL,
 }
 
 data class SavedAudioPickerUiState(

@@ -21,6 +21,10 @@ import com.yavin.wakeupsamurai.domain.alarm.SystemTimeProvider
 import com.yavin.wakeupsamurai.domain.alarm.TimeProvider
 import com.yavin.wakeupsamurai.alarm.AndroidOneShotAlarmScheduler
 import com.yavin.wakeupsamurai.alarm.OneShotAlarmScheduler
+import com.yavin.wakeupsamurai.alarm.AndroidRingingAlarmController
+import com.yavin.wakeupsamurai.alarm.RingingAlarmController
+import com.yavin.wakeupsamurai.alarm.AndroidFullScreenIntentAccess
+import com.yavin.wakeupsamurai.alarm.FullScreenIntentAccess
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -39,6 +43,8 @@ abstract class PersistenceBindingsModule {
     @Binds abstract fun bindTimeProvider(implementation: SystemTimeProvider): TimeProvider
     @Binds abstract fun bindAudioAssetFileStore(implementation: AudioAssetStorage): AudioAssetFileStore
     @Binds abstract fun bindOneShotAlarmScheduler(implementation: AndroidOneShotAlarmScheduler): OneShotAlarmScheduler
+    @Binds abstract fun bindRingingAlarmController(implementation: AndroidRingingAlarmController): RingingAlarmController
+    @Binds abstract fun bindFullScreenIntentAccess(implementation: AndroidFullScreenIntentAccess): FullScreenIntentAccess
 }
 
 @Module

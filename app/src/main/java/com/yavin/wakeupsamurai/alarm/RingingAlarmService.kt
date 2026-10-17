@@ -1,12 +1,10 @@
 package com.yavin.wakeupsamurai.alarm
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.media.AudioAttributes
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -54,6 +52,15 @@ class RingingAlarmService : Service() {
         val revision = intent.getLongExtra(AndroidOneShotAlarmScheduler.EXTRA_REVISION, -1L)
         if (revision < 0L) return START_NOT_STICKY
         val delivery = ActiveRinging(alarmId, occurrenceId, revision)
+        if (intent.action == ACTION_STOP_AFTER_SNOOZE) {
+            if (active == delivery) stopPlaybackAfterSnooze()
+            else if (active == null) stopSelf()
+            return START_NOT_STICKY
+        }
+        if (intent.action == ACTION_SNOOZE_FAILED) {
+            if (active == delivery) startForegroundNow(delivery, intent.getStringExtra(EXTRA_STATUS_MESSAGE))
+            return START_NOT_STICKY
+        }
         if (intent.action == ACTION_DISMISS) {
             // A notification action can revive a process after the player died; satisfy FGS startup first.
             if (active == null) startForegroundNow(delivery)
@@ -148,14 +155,37 @@ class RingingAlarmService : Service() {
         stopSelf()
     }
 
+    private fun stopPlaybackAfterSnooze() {
+        active = null
+        timeoutJob?.cancel()
+        timeoutJob = null
+        player?.stop()
+        player?.release()
+        player = null
+        usageRegistry.setRingingAsset(null)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     private fun finishWithoutPlayback(delivery: ActiveRinging, finalState: AlarmSchedulingState) {
         serviceScope.launch(Dispatchers.IO) {
             repository.finishOccurrence(delivery.alarmId, delivery.occurrenceId, delivery.revision, finalState)
         }
     }
 
-    private fun startForegroundNow(delivery: ActiveRinging) {
+    private fun startForegroundNow(delivery: ActiveRinging, statusMessage: String? = null) {
         createChannel()
+        val screenIntent = PendingIntent.getActivity(
+            this,
+            "ringing:${delivery.alarmId}:${delivery.occurrenceId}".hashCode(),
+            Intent(this, com.yavin.wakeupsamurai.RingingActivity::class.java)
+                .setAction(ACTION_SHOW_RINGING)
+                .setData(Uri.parse("wakeupsamurai://ringing/${delivery.alarmId}/${delivery.occurrenceId}"))
+                .putExtra(AndroidOneShotAlarmScheduler.EXTRA_ALARM_ID, delivery.alarmId)
+                .putExtra(AndroidOneShotAlarmScheduler.EXTRA_OCCURRENCE_ID, delivery.occurrenceId)
+                .putExtra(AndroidOneShotAlarmScheduler.EXTRA_REVISION, delivery.revision),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         val dismissIntent = PendingIntent.getBroadcast(
             this,
             delivery.requestCode(),
@@ -166,14 +196,30 @@ class RingingAlarmService : Service() {
                 .putExtra(AndroidOneShotAlarmScheduler.EXTRA_REVISION, delivery.revision),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val snoozeIntent = PendingIntent.getBroadcast(
+            this,
+            "snooze:${delivery.alarmId}:${delivery.occurrenceId}".hashCode(),
+            Intent(this, AlarmSnoozeReceiver::class.java)
+                .setAction(ACTION_SNOOZE)
+                .putExtra(AndroidOneShotAlarmScheduler.EXTRA_ALARM_ID, delivery.alarmId)
+                .putExtra(AndroidOneShotAlarmScheduler.EXTRA_OCCURRENCE_ID, delivery.occurrenceId)
+                .putExtra(AndroidOneShotAlarmScheduler.EXTRA_REVISION, delivery.revision),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Wake Up, Samurai")
-            .setContentText("Your alarm is ringing")
+            .setContentText(statusMessage ?: "Your alarm is ringing")
             .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setContentIntent(screenIntent)
+            .setFullScreenIntent(screenIntent, true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setSilent(true)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .addAction(0, "Dismiss", dismissIntent)
+            .addAction(0, "Snooze 5 min", snoozeIntent)
             .build()
         ServiceCompat.startForeground(
             this,
@@ -185,12 +231,7 @@ class RingingAlarmService : Service() {
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Ringing alarms",
-            NotificationManager.IMPORTANCE_HIGH,
-        ).apply { description = "Controls for an active Wake Up, Samurai alarm" }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        RingingNotificationChannel.ensureAndIsEnabled(this)
     }
 
     private data class ActiveRinging(val alarmId: String, val occurrenceId: String, val revision: Long) {
@@ -198,9 +239,14 @@ class RingingAlarmService : Service() {
     }
 
     companion object {
-        private const val CHANNEL_ID = "ringing_alarms"
+        private const val CHANNEL_ID = RingingNotificationChannel.ID
         private const val NOTIFICATION_ID = 5001
         const val ACTION_DISMISS = "com.yavin.wakeupsamurai.action.DISMISS_ALARM"
+        const val ACTION_SNOOZE = "com.yavin.wakeupsamurai.action.SNOOZE_ALARM"
+        private const val ACTION_STOP_AFTER_SNOOZE = "com.yavin.wakeupsamurai.action.STOP_AFTER_SNOOZE"
+        private const val ACTION_SNOOZE_FAILED = "com.yavin.wakeupsamurai.action.SNOOZE_FAILED"
+        const val ACTION_SHOW_RINGING = "com.yavin.wakeupsamurai.action.SHOW_RINGING"
+        private const val EXTRA_STATUS_MESSAGE = "status_message"
         private const val MAX_RINGING_MILLIS = 5 * 60 * 1_000L
 
         fun startIntent(context: Context, alarmId: String, occurrenceId: String, revision: Long): Intent =
@@ -211,5 +257,18 @@ class RingingAlarmService : Service() {
 
         fun dismissIntent(context: Context, alarmId: String, occurrenceId: String, revision: Long): Intent =
             startIntent(context, alarmId, occurrenceId, revision).setAction(ACTION_DISMISS)
+
+        fun stopAfterSnoozeIntent(context: Context, alarmId: String, occurrenceId: String, revision: Long): Intent =
+            startIntent(context, alarmId, occurrenceId, revision).setAction(ACTION_STOP_AFTER_SNOOZE)
+
+        fun snoozeFailedIntent(
+            context: Context,
+            alarmId: String,
+            occurrenceId: String,
+            revision: Long,
+            message: String,
+        ): Intent = startIntent(context, alarmId, occurrenceId, revision)
+            .setAction(ACTION_SNOOZE_FAILED)
+            .putExtra(EXTRA_STATUS_MESSAGE, message)
     }
 }

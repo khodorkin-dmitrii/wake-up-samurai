@@ -55,6 +55,26 @@ interface AlarmDao {
         revision: Long,
         finalState: String,
     ): Int
+
+    @Query("""
+        UPDATE alarms
+        SET scheduleRevision = :snoozeRevision,
+            scheduledOccurrenceId = :snoozeOccurrenceId,
+            scheduledAtEpochMillis = :snoozedAtEpochMillis,
+            schedulingState = 'SNOOZED'
+        WHERE id = :alarmId
+          AND scheduledOccurrenceId = :ringingOccurrenceId
+          AND scheduleRevision = :ringingRevision
+          AND schedulingState = 'RINGING'
+    """)
+    suspend fun replaceRingingWithSnooze(
+        alarmId: String,
+        ringingOccurrenceId: String,
+        ringingRevision: Long,
+        snoozeOccurrenceId: String,
+        snoozeRevision: Long,
+        snoozedAtEpochMillis: Long,
+    ): Int
 }
 
 @Dao

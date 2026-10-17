@@ -15,6 +15,14 @@ interface AlarmRepository {
         revision: Long,
         finalState: AlarmSchedulingState,
     ): Boolean
+    suspend fun replaceRingingWithSnooze(
+        alarmId: String,
+        ringingOccurrenceId: String,
+        ringingRevision: Long,
+        snoozeOccurrenceId: String,
+        snoozeRevision: Long,
+        snoozedAtEpochMillis: Long,
+    ): Boolean
 }
 
 interface AudioAssetRepository {

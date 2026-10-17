@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
+import com.yavin.wakeupsamurai.alarm.RingingNotificationChannel
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.content.res.Configuration
@@ -464,6 +465,27 @@ fun AlarmEditorScreen(
                     onClick = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Allow notifications") }
+            }
+            if (uiState.schedulingAccessRequest == SchedulingAccessRequest.APP_NOTIFICATIONS) {
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        })
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Enable app notifications") }
+            }
+            if (uiState.schedulingAccessRequest == SchedulingAccessRequest.ALARM_CHANNEL) {
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            putExtra(Settings.EXTRA_CHANNEL_ID, RingingNotificationChannel.ID)
+                        })
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Enable Ringing alarms channel") }
             }
             Button(
                 onClick = onSave,

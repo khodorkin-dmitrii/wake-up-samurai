@@ -4,6 +4,9 @@ import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.os.Build
+import android.app.Notification
+import com.yavin.wakeupsamurai.alarm.RingingNotificationChannel
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.content.res.Configuration
@@ -49,6 +52,7 @@ fun AlarmListScreen(
     onAddAlarm: () -> Unit,
     onOpenAlarm: (String) -> Unit,
     onEnabledChanged: (String, Boolean) -> Unit,
+    onCancelSnooze: (String) -> Unit,
     onManageAudio: () -> Unit,
     onNotificationPermissionResult: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -144,6 +148,62 @@ fun AlarmListScreen(
                         }
                     }
                 }
+                if (uiState.schedulingAccessRequest == SchedulingAccessRequest.APP_NOTIFICATIONS) {
+                    item {
+                        OutlinedButton(onClick = {
+                            context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            })
+                        }) { Text("Enable app notifications") }
+                    }
+                }
+                if (uiState.schedulingAccessRequest == SchedulingAccessRequest.ALARM_CHANNEL) {
+                    item {
+                        OutlinedButton(onClick = {
+                            context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                putExtra(Settings.EXTRA_CHANNEL_ID, RingingNotificationChannel.ID)
+                            })
+                        }) { Text("Enable Ringing alarms channel") }
+                    }
+                }
+                if (uiState.fullScreenIntentUnavailable && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    item {
+                        OutlinedButton(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+                                        data = Uri.fromParts("package", context.packageName, null)
+                                    },
+                                )
+                            },
+                        ) { Text("Allow full-screen alarm screen") }
+                    }
+                    item {
+                        Text(
+                            "Without full-screen access, the alarm still rings and its notification opens the ringing screen.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+                if (uiState.alarmChannelNotHighImportance) {
+                    item {
+                        OutlinedButton(onClick = {
+                            context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                putExtra(Settings.EXTRA_CHANNEL_ID, RingingNotificationChannel.ID)
+                            })
+                        }) { Text("Make Ringing alarms high importance") }
+                    }
+                    item {
+                        Text(
+                            "Lower channel importance can keep sound playing but may prevent automatic alarm-screen presentation.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
                 uiState.message?.let { message ->
                     item { Text(message, color = MaterialTheme.colorScheme.error) }
                 }
@@ -171,6 +231,10 @@ fun AlarmListScreen(
                             }
                             Text(alarm.title, style = MaterialTheme.typography.titleMedium)
                             Text(alarm.nextOccurrence, style = MaterialTheme.typography.bodyMedium)
+                            alarm.snoozedUntil?.let { until ->
+                                Text("Snoozed until $until", color = MaterialTheme.colorScheme.primary)
+                                OutlinedButton(onClick = { onCancelSnooze(alarm.id) }) { Text("Cancel snooze") }
+                            }
                             alarm.readinessProblem?.let {
                                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                             }
@@ -196,6 +260,7 @@ private fun AlarmListScreenPreview() {
             onAddAlarm = {},
             onOpenAlarm = {},
             onEnabledChanged = { _, _ -> },
+            onCancelSnooze = {},
             onManageAudio = {},
             onNotificationPermissionResult = {},
         )

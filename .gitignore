@@ -45,4 +45,6 @@ google-services.json
 *.hprof
 
 # Local implementation reports
-/docs/
+/docs/*
+!/docs/edge-tts-spike.md
+!/docs/alarm-snooze.md

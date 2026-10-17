@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.yavin.wakeupsamurai.data.audio.AudioAssetFileStore
 import com.yavin.wakeupsamurai.alarm.AlarmSaveResult
 import com.yavin.wakeupsamurai.alarm.OneShotAlarmCoordinator
+import com.yavin.wakeupsamurai.alarm.FullScreenIntentAccess
+import com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState
 import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
 import com.yavin.wakeupsamurai.domain.alarm.AudioSelectionKind
 import com.yavin.wakeupsamurai.domain.alarm.NextOccurrenceCalculator
@@ -30,6 +32,7 @@ class AlarmListViewModel @Inject constructor(
     private val calculator: NextOccurrenceCalculator,
     private val timeProvider: TimeProvider,
     private val alarmCoordinator: OneShotAlarmCoordinator,
+    private val fullScreenIntentAccess: FullScreenIntentAccess,
 ) : ViewModel() {
     private val refresh = MutableStateFlow(0L)
     private val _uiState = MutableStateFlow(AlarmListUiState())
@@ -55,11 +58,14 @@ class AlarmListViewModel @Inject constructor(
                             "Recurring execution is not supported yet."
                         alarm.configuredEnabled && alarm.schedulingState.name.startsWith("BLOCKED") ->
                             "System access is needed before this alarm can ring."
+                        alarm.schedulingState == AlarmSchedulingState.SNOOZED -> null
                         alarm.configuredEnabled && alarm.schedulingState != com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState.SCHEDULED ->
                             "This alarm has not been scheduled yet. Open it and save again."
                         else -> null
                     }
-                    val next = if (alarm.repeatDays.isEmpty()) alarm.resolvedOneShotAt else {
+                    val next = if (alarm.schedulingState == AlarmSchedulingState.SNOOZED) {
+                        alarm.scheduledAt
+                    } else if (alarm.repeatDays.isEmpty()) alarm.resolvedOneShotAt else {
                         calculator.recurringStrictlyAfter(now, zone, alarm.time, alarm.repeatDays)
                     }
                     AlarmListItemUi(
@@ -71,10 +77,17 @@ class AlarmListViewModel @Inject constructor(
                         configuredEnabled = alarm.configuredEnabled,
                         readinessProblem = problem,
                         schedulingState = alarm.schedulingState.name,
+                        snoozedUntil = if (alarm.schedulingState == AlarmSchedulingState.SNOOZED) {
+                            alarm.scheduledAt?.let { occurrenceSummary(it, now, zone) }
+                        } else null,
                     )
                     },
                     message = transient.message,
                     schedulingAccessRequest = transient.schedulingAccessRequest,
+                    fullScreenIntentUnavailable = alarms.any { it.alarm.configuredEnabled } &&
+                        !fullScreenIntentAccess.canUseFullScreenIntent(),
+                    alarmChannelNotHighImportance = alarms.any { it.alarm.configuredEnabled } &&
+                        !fullScreenIntentAccess.isAlarmChannelHighImportance(),
                 )
             }.collect(_uiState)
         }
@@ -129,12 +142,30 @@ class AlarmListViewModel @Inject constructor(
                         schedulingAccessRequest = SchedulingAccessRequest.NOTIFICATIONS,
                     )
                 }
+                is AlarmSaveResult.BlockedNotificationsDisabled -> {
+                    awaitingAccessAlarmId = result.alarm.id
+                    _uiState.value = _uiState.value.copy(
+                        message = "Enable app notifications to keep alarm controls available.",
+                        schedulingAccessRequest = SchedulingAccessRequest.APP_NOTIFICATIONS,
+                    )
+                }
+                is AlarmSaveResult.BlockedAlarmChannel -> {
+                    awaitingAccessAlarmId = result.alarm.id
+                    _uiState.value = _uiState.value.copy(
+                        message = "Enable the Ringing alarms channel to keep notification controls available.",
+                        schedulingAccessRequest = SchedulingAccessRequest.ALARM_CHANNEL,
+                    )
+                }
                 is AlarmSaveResult.Failed -> _uiState.value = _uiState.value.copy(message = result.message)
             }
         }
     }
 
     fun clearMessage() { _uiState.value = _uiState.value.copy(message = null) }
+
+    fun cancelSnooze(id: String) {
+        viewModelScope.launch { alarmCoordinator.cancelSnooze(id) }
+    }
 
     private var awaitingAccessAlarmId: String? = null
 
@@ -162,6 +193,14 @@ class AlarmListViewModel @Inject constructor(
                 is AlarmSaveResult.BlockedNotificationPermission -> _uiState.value = _uiState.value.copy(
                     message = "Notification permission is still required.",
                     schedulingAccessRequest = SchedulingAccessRequest.NOTIFICATIONS,
+                )
+                is AlarmSaveResult.BlockedNotificationsDisabled -> _uiState.value = _uiState.value.copy(
+                    message = "App notifications are still disabled.",
+                    schedulingAccessRequest = SchedulingAccessRequest.APP_NOTIFICATIONS,
+                )
+                is AlarmSaveResult.BlockedAlarmChannel -> _uiState.value = _uiState.value.copy(
+                    message = "The Ringing alarms channel is still disabled.",
+                    schedulingAccessRequest = SchedulingAccessRequest.ALARM_CHANNEL,
                 )
                 is AlarmSaveResult.SavedWithoutSchedule -> Unit
                 is AlarmSaveResult.Failed -> _uiState.value = _uiState.value.copy(message = result.message)

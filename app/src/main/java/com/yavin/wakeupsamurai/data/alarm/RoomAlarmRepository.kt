@@ -53,6 +53,19 @@ class RoomAlarmRepository @Inject constructor(
         revision = revision,
         finalState = finalState.name,
     ) == 1
+
+    override suspend fun replaceRingingWithSnooze(
+        alarmId: String,
+        ringingOccurrenceId: String,
+        ringingRevision: Long,
+        snoozeOccurrenceId: String,
+        snoozeRevision: Long,
+        snoozedAtEpochMillis: Long,
+    ): Boolean = usageRegistry.withWriteLock {
+        alarmDao.replaceRingingWithSnooze(
+            alarmId, ringingOccurrenceId, ringingRevision, snoozeOccurrenceId, snoozeRevision, snoozedAtEpochMillis,
+        ) == 1
+    }
 }
 
 @Singleton

@@ -4,6 +4,8 @@ data class AlarmListUiState(
     val alarms: List<AlarmListItemUi> = emptyList(),
     val message: String? = null,
     val schedulingAccessRequest: SchedulingAccessRequest? = null,
+    val fullScreenIntentUnavailable: Boolean = false,
+    val alarmChannelNotHighImportance: Boolean = false,
 ) {
     val isEmpty: Boolean get() = alarms.isEmpty()
 }
@@ -17,6 +19,7 @@ data class AlarmListItemUi(
     val configuredEnabled: Boolean,
     val readinessProblem: String?,
     val schedulingState: String,
+    val snoozedUntil: String? = null,
 )
 
-enum class SchedulingAccessRequest { EXACT_ALARM, NOTIFICATIONS }
+enum class SchedulingAccessRequest { EXACT_ALARM, NOTIFICATIONS, APP_NOTIFICATIONS, ALARM_CHANNEL }

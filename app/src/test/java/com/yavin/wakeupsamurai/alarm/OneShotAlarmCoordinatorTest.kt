@@ -6,6 +6,8 @@ import com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState
 import com.yavin.wakeupsamurai.domain.alarm.AlarmWithAudio
 import java.time.Instant
 import java.time.LocalTime
+import java.time.ZoneId
+import com.yavin.wakeupsamurai.domain.alarm.TimeProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -77,6 +79,79 @@ class OneShotAlarmCoordinatorTest {
         assertFalse(repository.finishOccurrence("alarm", "current", 2, AlarmSchedulingState.COMPLETED))
     }
 
+    @Test
+    fun snoozePersistsNewOccurrenceOnlyAfterExactSchedulingSucceeds() = runTest {
+        val ringing = enabledOneShot().copy(
+            scheduleRevision = 7,
+            scheduledOccurrenceId = "ringing",
+            schedulingState = AlarmSchedulingState.RINGING,
+        )
+        val repository = FakeAlarmRepository(ringing)
+        val scheduler = FakeScheduler()
+        val coordinator = OneShotAlarmCoordinator(repository, scheduler, FixedTimeProvider)
+
+        val result = coordinator.snooze(RingingOccurrence("alarm", "ringing", 7))
+
+        assertTrue(result is SnoozeResult.Snoozed)
+        val saved = repository.saved.last()
+        assertEquals(AlarmSchedulingState.SNOOZED, saved.schedulingState)
+        assertEquals(8L, saved.scheduleRevision)
+        assertEquals(Instant.parse("2026-10-15T07:05:00Z"), saved.scheduledAt)
+        assertEquals(1, scheduler.scheduled.size)
+    }
+
+    @Test
+    fun duplicateOrStaleSnoozeCannotReplaceNewPendingOccurrence() = runTest {
+        val ringing = enabledOneShot().copy(
+            scheduleRevision = 2,
+            scheduledOccurrenceId = "ringing",
+            schedulingState = AlarmSchedulingState.RINGING,
+        )
+        val repository = FakeAlarmRepository(ringing)
+        val scheduler = FakeScheduler()
+        val coordinator = OneShotAlarmCoordinator(repository, scheduler, FixedTimeProvider)
+
+        assertTrue(coordinator.snooze(RingingOccurrence("alarm", "ringing", 2)) is SnoozeResult.Snoozed)
+        assertEquals(SnoozeResult.Stale, coordinator.snooze(RingingOccurrence("alarm", "ringing", 2)))
+        assertEquals(1, scheduler.scheduled.size)
+    }
+
+    @Test
+    fun snoozeFailureLeavesCurrentOccurrenceRinging() = runTest {
+        val ringing = enabledOneShot().copy(
+            scheduleRevision = 2,
+            scheduledOccurrenceId = "ringing",
+            schedulingState = AlarmSchedulingState.RINGING,
+        )
+        val repository = FakeAlarmRepository(ringing)
+        val coordinator = OneShotAlarmCoordinator(
+            repository,
+            FakeScheduler(platformResult = PlatformScheduleResult.Failed("Platform rejected snooze.")),
+            FixedTimeProvider,
+        )
+
+        assertTrue(coordinator.snooze(RingingOccurrence("alarm", "ringing", 2)) is SnoozeResult.Failed)
+        assertEquals(AlarmSchedulingState.RINGING, repository.get("alarm")!!.alarm.schedulingState)
+    }
+
+    @Test
+    fun pendingSnoozeRestoresAndCanBeCancelled() = runTest {
+        val snoozed = enabledOneShot().copy(
+            scheduleRevision = 4,
+            scheduledOccurrenceId = "snooze",
+            scheduledAt = Instant.parse("2026-10-15T07:05:00Z"),
+            schedulingState = AlarmSchedulingState.SNOOZED,
+        )
+        val repository = FakeAlarmRepository(snoozed)
+        val scheduler = FakeScheduler()
+        val coordinator = OneShotAlarmCoordinator(repository, scheduler, FixedTimeProvider)
+
+        assertEquals("snooze", repository.get("alarm")!!.alarm.nextOccurrence()!!.occurrenceId)
+        assertTrue(coordinator.cancelSnooze("alarm"))
+        assertEquals(listOf("snooze"), scheduler.cancelled.map { it.occurrenceId })
+        assertFalse(repository.get("alarm")!!.alarm.configuredEnabled)
+    }
+
     private fun enabledOneShot() = Alarm(
         id = "alarm",
         label = "",
@@ -93,15 +168,21 @@ class OneShotAlarmCoordinatorTest {
 
 private class FakeScheduler(
     private val access: SchedulingAccess = SchedulingAccess.GRANTED,
+    private val platformResult: PlatformScheduleResult = PlatformScheduleResult.Scheduled,
 ) : OneShotAlarmScheduler {
     val scheduled = mutableListOf<ScheduledOccurrence>()
     val cancelled = mutableListOf<ScheduledOccurrence>()
     override fun access() = access
     override fun schedule(occurrence: ScheduledOccurrence): PlatformScheduleResult {
         scheduled += occurrence
-        return PlatformScheduleResult.Scheduled
+        return platformResult
     }
     override fun cancel(occurrence: ScheduledOccurrence) { cancelled += occurrence }
+}
+
+private object FixedTimeProvider : TimeProvider {
+    override fun now(): Instant = Instant.parse("2026-10-15T07:00:00Z")
+    override fun zoneId(): ZoneId = ZoneId.of("UTC")
 }
 
 private class FakeAlarmRepository(initial: Alarm? = null) : AlarmRepository {
@@ -138,6 +219,22 @@ private class FakeAlarmRepository(initial: Alarm? = null) : AlarmRepository {
             scheduledOccurrenceId = null,
             scheduledAt = null,
             schedulingState = finalState,
+        ))
+        return true
+    }
+    override suspend fun replaceRingingWithSnooze(
+        alarmId: String, ringingOccurrenceId: String, ringingRevision: Long,
+        snoozeOccurrenceId: String, snoozeRevision: Long, snoozedAtEpochMillis: Long,
+    ): Boolean {
+        val row = get(alarmId) ?: return false
+        if (row.alarm.schedulingState != AlarmSchedulingState.RINGING ||
+            row.alarm.scheduledOccurrenceId != ringingOccurrenceId || row.alarm.scheduleRevision != ringingRevision
+        ) return false
+        save(row.alarm.copy(
+            scheduleRevision = snoozeRevision,
+            scheduledOccurrenceId = snoozeOccurrenceId,
+            scheduledAt = Instant.ofEpochMilli(snoozedAtEpochMillis),
+            schedulingState = AlarmSchedulingState.SNOOZED,
         ))
         return true
     }

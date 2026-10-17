@@ -50,6 +50,7 @@ fun WakeUpSamuraiNavHost(
                     },
                     onOpenAlarm = { id -> backStack.pushEditorIfAbsentOnTop(AlarmEditorKey(id)) },
                     onEnabledChanged = alarmListViewModel::setConfiguredEnabled,
+                    onCancelSnooze = alarmListViewModel::cancelSnooze,
                     onManageAudio = dropUnlessResumed { backStack.pushAudioLibraryIfAbsentOnTop() },
                     onNotificationPermissionResult = alarmListViewModel::onNotificationPermissionResult,
                 )

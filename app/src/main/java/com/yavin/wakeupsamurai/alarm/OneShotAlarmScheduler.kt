@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
 import com.yavin.wakeupsamurai.MainActivity
 import com.yavin.wakeupsamurai.domain.alarm.Alarm
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -27,6 +28,8 @@ enum class SchedulingAccess {
     GRANTED,
     EXACT_ALARM_ACCESS_REQUIRED,
     NOTIFICATION_PERMISSION_REQUIRED,
+    NOTIFICATIONS_DISABLED,
+    ALARM_CHANNEL_DISABLED,
 }
 
 sealed interface PlatformScheduleResult {
@@ -53,6 +56,8 @@ class AndroidOneShotAlarmScheduler @Inject constructor(
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED ->
             SchedulingAccess.NOTIFICATION_PERMISSION_REQUIRED
+        !NotificationManagerCompat.from(context).areNotificationsEnabled() -> SchedulingAccess.NOTIFICATIONS_DISABLED
+        !RingingNotificationChannel.ensureAndIsEnabled(context) -> SchedulingAccess.ALARM_CHANNEL_DISABLED
         else -> SchedulingAccess.GRANTED
     }
 

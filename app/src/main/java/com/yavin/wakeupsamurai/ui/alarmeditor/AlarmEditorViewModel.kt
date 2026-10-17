@@ -544,6 +544,24 @@ class AlarmEditorViewModel @Inject constructor(
                             )
                         }
                     }
+                    is AlarmSaveResult.BlockedNotificationsDisabled -> {
+                        completeSave(result.alarm, close = false)
+                        _uiState.update {
+                            it.copy(
+                                validationMessage = "Enable app notifications so the alarm screen and controls remain available.",
+                                schedulingAccessRequest = SchedulingAccessRequest.APP_NOTIFICATIONS,
+                            )
+                        }
+                    }
+                    is AlarmSaveResult.BlockedAlarmChannel -> {
+                        completeSave(result.alarm, close = false)
+                        _uiState.update {
+                            it.copy(
+                                validationMessage = "Enable the Ringing alarms channel for notification controls and the alarm screen.",
+                                schedulingAccessRequest = SchedulingAccessRequest.ALARM_CHANNEL,
+                            )
+                        }
+                    }
                     is AlarmSaveResult.Failed -> _uiState.update {
                         it.copy(isSaving = false, validationMessage = result.message)
                     }
@@ -580,7 +598,12 @@ class AlarmEditorViewModel @Inject constructor(
     /** Called from the host after Android's exact-alarm settings panel returns. */
     fun onSchedulingAccessReturned() {
         val id = _uiState.value.alarmId ?: return
-        if (_uiState.value.schedulingAccessRequest != SchedulingAccessRequest.EXACT_ALARM) return
+        if (_uiState.value.schedulingAccessRequest !in setOf(
+                SchedulingAccessRequest.EXACT_ALARM,
+                SchedulingAccessRequest.APP_NOTIFICATIONS,
+                SchedulingAccessRequest.ALARM_CHANNEL,
+            )
+        ) return
         retryScheduling(id)
     }
 
@@ -640,6 +663,12 @@ class AlarmEditorViewModel @Inject constructor(
                 }
                 is AlarmSaveResult.BlockedNotificationPermission -> _uiState.update {
                     it.copy(isSaving = false, validationMessage = "Notification permission is still required.", schedulingAccessRequest = SchedulingAccessRequest.NOTIFICATIONS)
+                }
+                is AlarmSaveResult.BlockedNotificationsDisabled -> _uiState.update {
+                    it.copy(isSaving = false, validationMessage = "App notifications are still disabled.", schedulingAccessRequest = SchedulingAccessRequest.APP_NOTIFICATIONS)
+                }
+                is AlarmSaveResult.BlockedAlarmChannel -> _uiState.update {
+                    it.copy(isSaving = false, validationMessage = "The Ringing alarms channel is still disabled.", schedulingAccessRequest = SchedulingAccessRequest.ALARM_CHANNEL)
                 }
                 is AlarmSaveResult.SavedWithoutSchedule -> completeSave(result.alarm, close = false)
                 is AlarmSaveResult.Failed -> _uiState.update { it.copy(isSaving = false, validationMessage = result.message) }
