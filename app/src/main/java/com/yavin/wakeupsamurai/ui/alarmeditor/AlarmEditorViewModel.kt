@@ -173,6 +173,7 @@ class AlarmEditorViewModel @Inject constructor(
                 resolvedOneShotEpochMillis = row.alarm.resolvedOneShotAt?.toEpochMilli(),
                 hasPersistedAlarm = true,
                 schedulingState = row.alarm.schedulingState,
+                hasPendingRegularOccurrence = row.alarm.scheduledOccurrenceId != null,
             )
             refreshNextOccurrence()
         }
@@ -519,12 +520,7 @@ class AlarmEditorViewModel @Inject constructor(
                 when (val result = alarmCoordinator.save(alarm)) {
                     is AlarmSaveResult.Scheduled -> completeSave(result.alarm, close = true)
                     is AlarmSaveResult.SavedWithoutSchedule -> {
-                        completeSave(result.alarm, close = !result.alarm.configuredEnabled)
-                        if (result.alarm.configuredEnabled) {
-                            _uiState.update {
-                                it.copy(validationMessage = "Recurring alarm execution is not supported yet.")
-                            }
-                        }
+                        completeSave(result.alarm, close = true)
                     }
                     is AlarmSaveResult.BlockedExactAlarmAccess -> {
                         completeSave(result.alarm, close = false)
@@ -687,6 +683,7 @@ class AlarmEditorViewModel @Inject constructor(
                 resolvedOneShotEpochMillis = alarm.resolvedOneShotAt?.toEpochMilli(),
                 isScheduleDirty = false,
                 schedulingState = alarm.schedulingState,
+                hasPendingRegularOccurrence = alarm.scheduledOccurrenceId != null,
                 schedulingAccessRequest = null,
             )
         }

@@ -48,3 +48,6 @@ google-services.json
 /docs/*
 !/docs/edge-tts-spike.md
 !/docs/alarm-snooze.md
+!/docs/alarm-recurring.md
+!/docs/alarm-recovery.md
+!/docs/phase-7-acceptance.md

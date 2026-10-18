@@ -20,9 +20,19 @@ import com.yavin.wakeupsamurai.ui.navigation.WakeUpSamuraiNavHost
 import com.yavin.wakeupsamurai.ui.theme.WakeUpSamuraiTheme
 import dagger.hilt.android.AndroidEntryPoint
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import com.yavin.wakeupsamurai.alarm.OneShotAlarmCoordinator
+import com.yavin.wakeupsamurai.alarm.RingingRecoveryStarter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @Inject lateinit var alarmCoordinator: OneShotAlarmCoordinator
+    @Inject lateinit var ringingRecoveryStarter: RingingRecoveryStarter
     private val alarmListViewModel: AlarmListViewModel by viewModels()
     private val alarmEditorViewModel: AlarmEditorViewModel by viewModels()
     private val audioLibraryViewModel: AudioLibraryViewModel by viewModels()
@@ -52,6 +62,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        lifecycleScope.launch {
+            val recoverable = withContext(Dispatchers.IO) { alarmCoordinator.reconcile() }
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) ringingRecoveryStarter.start(recoverable)
+        }
         refreshTimeDependentUi()
         alarmEditorViewModel.onSchedulingAccessReturned()
         alarmListViewModel.onSchedulingAccessReturned()

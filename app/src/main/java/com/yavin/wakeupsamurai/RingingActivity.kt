@@ -21,10 +21,28 @@ import com.yavin.wakeupsamurai.ui.ringing.RingingUiState
 import com.yavin.wakeupsamurai.ui.ringing.RingingViewModel
 import com.yavin.wakeupsamurai.ui.theme.WakeUpSamuraiTheme
 import dagger.hilt.android.AndroidEntryPoint
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import com.yavin.wakeupsamurai.alarm.OneShotAlarmCoordinator
+import com.yavin.wakeupsamurai.alarm.RingingRecoveryStarter
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @AndroidEntryPoint
 class RingingActivity : ComponentActivity() {
+    @Inject lateinit var alarmCoordinator: OneShotAlarmCoordinator
+    @Inject lateinit var ringingRecoveryStarter: RingingRecoveryStarter
     private val viewModel: RingingViewModel by viewModels()
+
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch {
+            val recoverable = withContext(Dispatchers.IO) { alarmCoordinator.reconcile() }
+            if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) ringingRecoveryStarter.start(recoverable)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

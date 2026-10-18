@@ -7,13 +7,17 @@ interface AlarmRepository {
     suspend fun get(id: String): AlarmWithAudio?
     suspend fun save(alarm: Alarm)
     suspend fun delete(id: String)
-    /** Atomically accepts one system delivery and rejects an old or repeated PendingIntent. */
-    suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long): Boolean
+    /** Atomically consumes exactly one pending regular or snooze delivery. */
+    suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long, bootId: Long,
+        deadlineElapsedMillis: Long): DeliveryClaim
+    suspend fun installNextRegular(alarmId: String, previousRevision: Long, occurrenceId: String, revision: Long, at: Long, bootId: Long): Boolean
+    suspend fun markRegularSchedulingFailed(alarmId: String, previousRevision: Long, state: AlarmSchedulingState): Boolean
     suspend fun finishOccurrence(
         alarmId: String,
         occurrenceId: String,
         revision: Long,
         finalState: AlarmSchedulingState,
+        failureMessage: String? = null,
     ): Boolean
     suspend fun replaceRingingWithSnooze(
         alarmId: String,
@@ -22,8 +26,13 @@ interface AlarmRepository {
         snoozeOccurrenceId: String,
         snoozeRevision: Long,
         snoozedAtEpochMillis: Long,
+        elapsedDeadlineMillis: Long,
+        bootId: Long,
     ): Boolean
+    suspend fun clearPendingSnooze(alarmId: String, occurrenceId: String, revision: Long): Boolean
 }
+
+enum class DeliveryClaim { REGULAR, SNOOZE, SKIPPED_REGULAR, SKIPPED_SNOOZE, STALE }
 
 interface AudioAssetRepository {
     fun observeAll(): Flow<List<AudioAsset>>

@@ -56,6 +56,7 @@ class RingingViewModelTest {
         runCurrent()
         viewModel.dismiss()
         viewModel.dismiss()
+        runCurrent()
 
         assertEquals(listOf(occurrence), controller.dismissals)
     }
@@ -88,7 +89,8 @@ class RingingViewModelTest {
         createdAt = Instant.EPOCH,
         updatedAt = Instant.EPOCH,
         scheduleRevision = occurrence.revision,
-        scheduledOccurrenceId = occurrence.occurrenceId,
+        ringingOccurrenceId = occurrence.occurrenceId,
+        ringingRevision = occurrence.revision,
         schedulingState = AlarmSchedulingState.RINGING,
     )
 }
@@ -98,7 +100,7 @@ private class FakeController(
 ) : RingingAlarmController {
     val dismissals = mutableListOf<RingingOccurrence>()
     val snoozes = mutableListOf<RingingOccurrence>()
-    override fun dismiss(occurrence: RingingOccurrence) { dismissals += occurrence }
+    override suspend fun dismiss(occurrence: RingingOccurrence) { dismissals += occurrence }
     override suspend fun snooze(occurrence: RingingOccurrence): SnoozeResult {
         snoozes += occurrence
         return snoozeResult
@@ -111,15 +113,22 @@ private class FakeRepository(initial: Alarm) : AlarmRepository {
     override suspend fun get(id: String): AlarmWithAudio? = rows.value.firstOrNull { it.alarm.id == id }
     override suspend fun save(alarm: Alarm) = Unit
     override suspend fun delete(id: String) = Unit
-    override suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long) = false
+    override suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long, bootId: Long,
+        deadlineElapsedMillis: Long) =
+        com.yavin.wakeupsamurai.domain.alarm.DeliveryClaim.STALE
+    override suspend fun installNextRegular(alarmId: String, previousRevision: Long, occurrenceId: String, revision: Long, at: Long, bootId: Long) = false
+    override suspend fun markRegularSchedulingFailed(alarmId: String, previousRevision: Long, state: AlarmSchedulingState) = false
     override suspend fun finishOccurrence(
         alarmId: String,
         occurrenceId: String,
         revision: Long,
         finalState: AlarmSchedulingState,
+        failureMessage: String?,
     ) = false
     override suspend fun replaceRingingWithSnooze(
         alarmId: String, ringingOccurrenceId: String, ringingRevision: Long,
         snoozeOccurrenceId: String, snoozeRevision: Long, snoozedAtEpochMillis: Long,
+        elapsedDeadlineMillis: Long, bootId: Long,
     ) = false
+    override suspend fun clearPendingSnooze(alarmId: String, occurrenceId: String, revision: Long) = false
 }

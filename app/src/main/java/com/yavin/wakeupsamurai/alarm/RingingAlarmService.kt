@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -29,6 +30,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collectLatest
+import android.util.Log
 
 @AndroidEntryPoint
 class RingingAlarmService : Service() {
@@ -37,11 +42,15 @@ class RingingAlarmService : Service() {
     @Inject lateinit var usageRegistry: AudioAssetUsageRegistry
     @Inject lateinit var preview: AudioPreview
     @Inject lateinit var voiceRecorder: VoiceRecorder
+    @Inject lateinit var coordinator: OneShotAlarmCoordinator
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var player: ExoPlayer? = null
     private var active: ActiveRinging? = null
     private var timeoutJob: Job? = null
+    private var observationJob: Job? = null
+    private var startingJob: Job? = null
+    private var terminalJob: Job? = null
     private var fallbackPlaying = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -53,62 +62,104 @@ class RingingAlarmService : Service() {
         if (revision < 0L) return START_NOT_STICKY
         val delivery = ActiveRinging(alarmId, occurrenceId, revision)
         if (intent.action == ACTION_STOP_AFTER_SNOOZE) {
-            if (active == delivery) stopPlaybackAfterSnooze()
+            if (active == delivery) stopPlaybackAndSelf()
             else if (active == null) stopSelf()
             return START_NOT_STICKY
         }
         if (intent.action == ACTION_SNOOZE_FAILED) {
-            if (active == delivery) startForegroundNow(delivery, intent.getStringExtra(EXTRA_STATUS_MESSAGE))
+            if (active == delivery) runCatching {
+                startForegroundNow(delivery, intent.getStringExtra(EXTRA_STATUS_MESSAGE))
+            } else if (active == null) stopSelf()
             return START_NOT_STICKY
         }
         if (intent.action == ACTION_DISMISS) {
-            // A notification action can revive a process after the player died; satisfy FGS startup first.
-            if (active == null) startForegroundNow(delivery)
-            if (active == delivery) stopRinging(AlarmSchedulingState.COMPLETED)
-            else {
-                finishWithoutPlayback(delivery, AlarmSchedulingState.COMPLETED)
-                if (active == null) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                }
-            }
+            if (active != null && active != delivery) return START_NOT_STICKY
+            if (active == null && !startForegroundSafely(delivery)) return START_NOT_STICKY
+            completeRinging(delivery, AlarmSchedulingState.COMPLETED)
             return START_NOT_STICKY
         }
+        if (intent.action != ACTION_START) return START_NOT_STICKY
+        if (active == delivery) return START_REDELIVER_INTENT
         if (active != null) {
-            // Temporary simultaneous-alarm policy: retain the first one and mark later delivery skipped.
-            finishWithoutPlayback(delivery, AlarmSchedulingState.SKIPPED)
-            return START_NOT_STICKY
+            val prior = requireNotNull(active)
+            serviceScope.launch {
+                runCatching {
+                    if (coordinator.ringingStatus(prior.toOccurrence()) != null) {
+                        coordinator.finishOccurrence(alarmId, occurrenceId, revision, AlarmSchedulingState.SKIPPED)
+                    } else {
+                        stopPlaybackAndSelf()
+                        // The trigger was accepted after the old session became stale; Android may redeliver it.
+                        runCatching { ContextCompat.startForegroundService(
+                            this@RingingAlarmService, startIntent(this@RingingAlarmService, alarmId, occurrenceId, revision),
+                        ) }.onFailure {
+                            coordinator.finishOccurrence(alarmId, occurrenceId, revision, AlarmSchedulingState.FAILED,
+                                "Android could not start alarm playback. Check alarm and notification access.")
+                        }
+                    }
+                }.onFailure { Log.w("RingingAlarm", "Could not resolve competing alarm", it) }
+            }
+            return START_REDELIVER_INTENT
         }
         active = delivery
-        startForegroundNow(delivery)
-        preview.stop()
-        voiceRecorder.discard()
-        serviceScope.launch {
-            val row = withContext(Dispatchers.IO) { repository.get(alarmId) }
-            if (active != delivery || row == null) return@launch
-            val asset = row.audioAsset
-            val file = asset?.takeIf { storage.isReadable(it.relativePath) }?.let { storage.resolve(it.relativePath) }
-            asset?.id?.let(usageRegistry::setRingingAsset)
-            play(file)
-            timeoutJob = launch {
-                delay(MAX_RINGING_MILLIS)
-                if (active == delivery) stopRinging(AlarmSchedulingState.COMPLETED)
+        if (!startForegroundSafely(delivery)) return START_NOT_STICKY
+        startingJob = serviceScope.launch {
+            try {
+                val status = coordinator.ringingStatus(delivery.toOccurrence())
+                if (active != delivery || status == null || terminalJob != null) {
+                    stopPlaybackAndSelf()
+                    return@launch
+                }
+                timeoutJob = launch {
+                    delay(status.remainingMillis)
+                    if (active == delivery) completeRinging(delivery, AlarmSchedulingState.COMPLETED,
+                        stopOnDatabaseFailure = true)
+                }
+                observationJob = launch {
+                    repository.observeAll().collectLatest { rows ->
+                        if (active == delivery && rows.none { it.alarm.id == alarmId &&
+                                it.alarm.ringingOccurrenceId == occurrenceId &&
+                                it.alarm.ringingRevision == revision }) stopPlaybackAndSelf()
+                    }
+                }
+                preview.stop()
+                voiceRecorder.discard()
+                val row = withContext(Dispatchers.IO) { repository.get(alarmId) }
+                if (active != delivery || terminalJob != null || row?.alarm?.ringingOccurrenceId != occurrenceId ||
+                    row.alarm.ringingRevision != revision) return@launch
+                val asset = row.audioAsset
+                val file = withContext(Dispatchers.IO) {
+                    asset?.takeIf { storage.isReadable(it.relativePath) }?.let { storage.resolve(it.relativePath) }
+                }
+                if (active != delivery || terminalJob != null) return@launch
+                asset?.id?.let(usageRegistry::setRingingAsset)
+                play(file)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                if (active == delivery) failPlayback(delivery,
+                    "Alarm audio could not start; check the saved file and notification access.")
+                Log.w("RingingAlarm", "Alarm playback setup failed", exception)
             }
         }
-        return START_NOT_STICKY
+        return START_REDELIVER_INTENT
     }
 
     override fun onDestroy() {
-        timeoutJob?.cancel()
-        player?.release()
-        player = null
-        usageRegistry.setRingingAsset(null)
+        active = null
+        serviceScope.cancel()
+        releaseAudio()
         super.onDestroy()
     }
 
     private fun play(file: File?) {
         fallbackPlaying = file == null
-        playUri(file?.let(android.net.Uri::fromFile) ?: fallbackUri())
+        try {
+            playUri(file?.let(Uri::fromFile) ?: fallbackUri())
+        } catch (error: Exception) {
+            if (fallbackPlaying) throw error
+            fallbackPlaying = true
+            playUri(fallbackUri())
+        }
     }
 
     private fun playUri(uri: android.net.Uri) {
@@ -136,41 +187,87 @@ class RingingAlarmService : Service() {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             if (!fallbackPlaying && active != null) {
                 fallbackPlaying = true
-                playUri(fallbackUri())
+                runCatching { playUri(fallbackUri()) }.onFailure {
+                    active?.let { delivery -> failPlayback(delivery,
+                        "The saved audio and backup sound could not play.") }
+                }
+            } else active?.let { delivery -> failPlayback(delivery,
+                "The saved audio and backup sound could not play.") }
+        }
+    }
+
+    private fun failPlayback(delivery: ActiveRinging, message: String) {
+        completeRinging(delivery, AlarmSchedulingState.FAILED, message, stopOnDatabaseFailure = true)
+    }
+
+    private fun completeRinging(
+        delivery: ActiveRinging,
+        finalState: AlarmSchedulingState,
+        failureMessage: String? = null,
+        stopOnDatabaseFailure: Boolean = false,
+    ) {
+        if (terminalJob?.isActive == true) return
+        startingJob?.cancel()
+        terminalJob = serviceScope.launch {
+            val completed = runCatching {
+                coordinator.finishOccurrence(delivery.alarmId, delivery.occurrenceId, delivery.revision,
+                    finalState, failureMessage)
+            }.getOrDefault(false)
+            val stillCurrent = if (completed) false else runCatching {
+                coordinator.ringingStatus(delivery.toOccurrence()) != null
+            }.getOrDefault(true)
+            if (completed || !stillCurrent || stopOnDatabaseFailure || active != delivery) {
+                if (active == delivery) stopPlaybackAndSelf()
+                else if (active == null) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            } else {
+                terminalJob = null
+                if (active == delivery) runCatching {
+                    startForegroundNow(delivery, "Couldn't dismiss this alarm. Please try again.")
+                }
             }
         }
     }
 
-    private fun stopRinging(finalState: AlarmSchedulingState) {
-        val delivery = active ?: return
+    private fun stopPlaybackAndSelf() {
         active = null
+        startingJob?.cancel()
+        startingJob = null
+        observationJob?.cancel()
+        observationJob = null
         timeoutJob?.cancel()
         timeoutJob = null
-        player?.stop()
-        player?.release()
-        player = null
-        usageRegistry.setRingingAsset(null)
-        finishWithoutPlayback(delivery, finalState)
+        releaseAudio()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    private fun stopPlaybackAfterSnooze() {
-        active = null
-        timeoutJob?.cancel()
-        timeoutJob = null
-        player?.stop()
-        player?.release()
-        player = null
-        usageRegistry.setRingingAsset(null)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
-    }
-
-    private fun finishWithoutPlayback(delivery: ActiveRinging, finalState: AlarmSchedulingState) {
-        serviceScope.launch(Dispatchers.IO) {
-            repository.finishOccurrence(delivery.alarmId, delivery.occurrenceId, delivery.revision, finalState)
+    private fun releaseAudio() {
+        try {
+            runCatching { player?.stop() }
+            runCatching { player?.release() }
+        } finally {
+            player = null
+            usageRegistry.setRingingAsset(null)
         }
+    }
+
+    private fun startForegroundSafely(delivery: ActiveRinging): Boolean = try {
+        startForegroundNow(delivery)
+        true
+    } catch (_: Exception) {
+        serviceScope.launch {
+            try {
+                coordinator.finishOccurrence(delivery.alarmId, delivery.occurrenceId, delivery.revision,
+                    AlarmSchedulingState.FAILED,
+                    "Android could not show the alarm notification. Check notification access.")
+            } finally {
+                stopPlaybackAndSelf()
+            }
+        }
+        false
     }
 
     private fun startForegroundNow(delivery: ActiveRinging, statusMessage: String? = null) {
@@ -235,21 +332,23 @@ class RingingAlarmService : Service() {
 
     private data class ActiveRinging(val alarmId: String, val occurrenceId: String, val revision: Long) {
         fun requestCode(): Int = "$alarmId:$occurrenceId".hashCode()
+        fun toOccurrence() = RingingOccurrence(alarmId, occurrenceId, revision)
     }
 
     companion object {
         private const val CHANNEL_ID = RingingNotificationChannel.ID
         private const val NOTIFICATION_ID = 5001
         const val ACTION_DISMISS = "com.yavin.wakeupsamurai.action.DISMISS_ALARM"
+        private const val ACTION_START = "com.yavin.wakeupsamurai.action.START_ALARM"
         const val ACTION_SNOOZE = "com.yavin.wakeupsamurai.action.SNOOZE_ALARM"
         private const val ACTION_STOP_AFTER_SNOOZE = "com.yavin.wakeupsamurai.action.STOP_AFTER_SNOOZE"
         private const val ACTION_SNOOZE_FAILED = "com.yavin.wakeupsamurai.action.SNOOZE_FAILED"
         const val ACTION_SHOW_RINGING = "com.yavin.wakeupsamurai.action.SHOW_RINGING"
         private const val EXTRA_STATUS_MESSAGE = "status_message"
-        private const val MAX_RINGING_MILLIS = 5 * 60 * 1_000L
 
         fun startIntent(context: Context, alarmId: String, occurrenceId: String, revision: Long): Intent =
             Intent(context, RingingAlarmService::class.java)
+                .setAction(ACTION_START)
                 .putExtra(AndroidOneShotAlarmScheduler.EXTRA_ALARM_ID, alarmId)
                 .putExtra(AndroidOneShotAlarmScheduler.EXTRA_OCCURRENCE_ID, occurrenceId)
                 .putExtra(AndroidOneShotAlarmScheduler.EXTRA_REVISION, revision)

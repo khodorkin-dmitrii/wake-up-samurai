@@ -2,6 +2,7 @@ package com.yavin.wakeupsamurai.alarm
 
 import android.content.Context
 import androidx.core.content.ContextCompat
+import com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,7 +16,7 @@ data class RingingOccurrence(
 
 /** Shared command boundary for the notification and ringing UI. */
 interface RingingAlarmController {
-    fun dismiss(occurrence: RingingOccurrence)
+    suspend fun dismiss(occurrence: RingingOccurrence)
     suspend fun snooze(occurrence: RingingOccurrence): SnoozeResult
 }
 
@@ -24,16 +25,10 @@ class AndroidRingingAlarmController @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val alarmCoordinator: OneShotAlarmCoordinator,
 ) : RingingAlarmController {
-    override fun dismiss(occurrence: RingingOccurrence) {
-        ContextCompat.startForegroundService(
-            context,
-            RingingAlarmService.dismissIntent(
-                context = context,
-                alarmId = occurrence.alarmId,
-                occurrenceId = occurrence.occurrenceId,
-                revision = occurrence.revision,
-            ),
-        )
+    override suspend fun dismiss(occurrence: RingingOccurrence) {
+        // Persist completion first. The service observes the identity change and releases playback.
+        alarmCoordinator.finishOccurrence(occurrence.alarmId, occurrence.occurrenceId,
+            occurrence.revision, AlarmSchedulingState.COMPLETED)
     }
 
     override suspend fun snooze(occurrence: RingingOccurrence): SnoozeResult {
@@ -50,7 +45,8 @@ class AndroidRingingAlarmController @Inject constructor(
             )
             SnoozeResult.Stale -> null
         }
-        intent?.let { ContextCompat.startForegroundService(context, it) }
+        // Room transition is authoritative. The service observes it even if this best-effort command is refused.
+        intent?.let { runCatching { ContextCompat.startForegroundService(context, it) } }
         return result
     }
 }

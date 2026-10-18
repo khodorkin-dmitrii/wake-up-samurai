@@ -19,6 +19,18 @@ data class Alarm(
     val scheduledOccurrenceId: String? = null,
     val scheduledAt: Instant? = null,
     val schedulingState: AlarmSchedulingState = AlarmSchedulingState.NOT_SCHEDULED,
+    val snoozeOccurrenceId: String? = null,
+    val snoozeRevision: Long? = null,
+    val snoozedAt: Instant? = null,
+    val ringingOccurrenceId: String? = null,
+    val ringingRevision: Long? = null,
+    val regularScheduledBootId: Long? = null,
+    val snoozeScheduledBootId: Long? = null,
+    val snoozeElapsedDeadlineMillis: Long? = null,
+    val ringingBootId: Long? = null,
+    val lastRegularDeliveredAt: Instant? = null,
+    val ringingDeadlineElapsedMillis: Long? = null,
+    val lastRingingFailure: String? = null,
 )
 
 /** The persisted state of the derived Android alarm, not the user's enabled intent. */
@@ -29,10 +41,10 @@ enum class AlarmSchedulingState {
     SNOOZED,
     BLOCKED_EXACT_ALARM_ACCESS,
     BLOCKED_NOTIFICATION_PERMISSION,
-    UNSUPPORTED_RECURRING,
     COMPLETED,
     SKIPPED,
     FAILED,
+    MISSED,
 }
 
 enum class AudioSelectionKind {

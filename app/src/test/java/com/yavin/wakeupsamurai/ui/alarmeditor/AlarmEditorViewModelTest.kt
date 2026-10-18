@@ -413,7 +413,10 @@ class AlarmEditorViewModelTest {
             override fun now(): Instant = Instant.parse("2026-10-13T06:00:00Z")
             override fun zoneId(): ZoneId = ZoneId.of("UTC")
         },
-        OneShotAlarmCoordinator(repository, FakeOneShotAlarmScheduler()),
+        OneShotAlarmCoordinator(repository, FakeOneShotAlarmScheduler(), bootClock = object : com.yavin.wakeupsamurai.alarm.AlarmBootClock {
+            override fun bootId() = 1L
+            override fun elapsedRealtimeMillis() = 100_000L
+        }),
     )
 }
 
@@ -476,17 +479,26 @@ private class FakeAlarmRepository : AlarmRepository {
         values.value = values.value.filterNot { it.alarm.id == alarm.id } + AlarmWithAudio(alarm, null)
     }
     override suspend fun delete(id: String) { values.value = values.value.filterNot { it.alarm.id == id } }
-    override suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long) = false
+    override suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long, bootId: Long,
+        deadlineElapsedMillis: Long) =
+        com.yavin.wakeupsamurai.domain.alarm.DeliveryClaim.STALE
+    override suspend fun installNextRegular(alarmId: String, previousRevision: Long, occurrenceId: String, revision: Long, at: Long, bootId: Long) = false
+    override suspend fun markRegularSchedulingFailed(
+        alarmId: String, previousRevision: Long, state: com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState,
+    ) = false
     override suspend fun finishOccurrence(
         alarmId: String,
         occurrenceId: String,
         revision: Long,
         finalState: com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState,
+        failureMessage: String?,
     ) = false
     override suspend fun replaceRingingWithSnooze(
         alarmId: String, ringingOccurrenceId: String, ringingRevision: Long,
         snoozeOccurrenceId: String, snoozeRevision: Long, snoozedAtEpochMillis: Long,
+        elapsedDeadlineMillis: Long, bootId: Long,
     ) = false
+    override suspend fun clearPendingSnooze(alarmId: String, occurrenceId: String, revision: Long) = false
 }
 
 private class FakeAudioAssetRepository(

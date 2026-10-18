@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.yavin.wakeupsamurai.alarm.RingingAlarmController
 import com.yavin.wakeupsamurai.alarm.RingingOccurrence
 import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
-import com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
@@ -53,9 +52,8 @@ class RingingViewModel @Inject constructor(
             alarmRepository.observeAll().collectLatest { alarms ->
                 val row = alarms.firstOrNull { item ->
                     item.alarm.id == occurrence.alarmId &&
-                        item.alarm.scheduledOccurrenceId == occurrence.occurrenceId &&
-                        item.alarm.scheduleRevision == occurrence.revision &&
-                        item.alarm.schedulingState == AlarmSchedulingState.RINGING
+                        item.alarm.ringingOccurrenceId == occurrence.occurrenceId &&
+                        item.alarm.ringingRevision == occurrence.revision
                 }
                 _uiState.value = row?.let {
                     RingingUiState.Active(
@@ -73,7 +71,11 @@ class RingingViewModel @Inject constructor(
         val active = _uiState.value as? RingingUiState.Active ?: return
         if (active.isDismissing) return
         _uiState.value = active.copy(isDismissing = true)
-        ringingController.dismiss(active.occurrence)
+        viewModelScope.launch {
+            runCatching { ringingController.dismiss(active.occurrence) }.onFailure {
+                _uiState.value = active.copy(actionError = "Couldn't dismiss this alarm. Please try again.")
+            }
+        }
     }
 
     fun snooze() {

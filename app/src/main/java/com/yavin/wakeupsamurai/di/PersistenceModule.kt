@@ -13,6 +13,9 @@ import com.yavin.wakeupsamurai.data.local.AudioAssetDao
 import com.yavin.wakeupsamurai.data.local.WakeUpSamuraiDatabase
 import com.yavin.wakeupsamurai.data.local.MIGRATION_1_2
 import com.yavin.wakeupsamurai.data.local.MIGRATION_2_3
+import com.yavin.wakeupsamurai.data.local.MIGRATION_3_4
+import com.yavin.wakeupsamurai.data.local.MIGRATION_4_5
+import com.yavin.wakeupsamurai.data.local.MIGRATION_5_6
 import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetRepository
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetUsageRegistry
@@ -25,6 +28,8 @@ import com.yavin.wakeupsamurai.alarm.AndroidRingingAlarmController
 import com.yavin.wakeupsamurai.alarm.RingingAlarmController
 import com.yavin.wakeupsamurai.alarm.AndroidFullScreenIntentAccess
 import com.yavin.wakeupsamurai.alarm.FullScreenIntentAccess
+import com.yavin.wakeupsamurai.alarm.AlarmBootClock
+import com.yavin.wakeupsamurai.alarm.AndroidAlarmBootClock
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -45,6 +50,7 @@ abstract class PersistenceBindingsModule {
     @Binds abstract fun bindOneShotAlarmScheduler(implementation: AndroidOneShotAlarmScheduler): OneShotAlarmScheduler
     @Binds abstract fun bindRingingAlarmController(implementation: AndroidRingingAlarmController): RingingAlarmController
     @Binds abstract fun bindFullScreenIntentAccess(implementation: AndroidFullScreenIntentAccess): FullScreenIntentAccess
+    @Binds abstract fun bindAlarmBootClock(implementation: AndroidAlarmBootClock): AlarmBootClock
 }
 
 @Module
@@ -53,7 +59,7 @@ object PersistenceModule {
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext context: Context): WakeUpSamuraiDatabase =
         Room.databaseBuilder(context, WakeUpSamuraiDatabase::class.java, "wake-up-samurai.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .build()
 
     @Provides fun provideAlarmDao(database: WakeUpSamuraiDatabase): AlarmDao = database.alarmDao()

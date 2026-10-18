@@ -13,7 +13,6 @@ import androidx.core.app.NotificationManagerCompat
 import com.yavin.wakeupsamurai.MainActivity
 import com.yavin.wakeupsamurai.domain.alarm.Alarm
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,6 +21,7 @@ data class ScheduledOccurrence(
     val occurrenceId: String,
     val revision: Long,
     val triggerAtEpochMillis: Long,
+    val elapsedDeadlineMillis: Long? = null,
 )
 
 enum class SchedulingAccess {
@@ -40,6 +40,7 @@ sealed interface PlatformScheduleResult {
 
 interface OneShotAlarmScheduler {
     fun access(): SchedulingAccess
+    fun canScheduleExactAlarms(): Boolean = access() != SchedulingAccess.EXACT_ALARM_ACCESS_REQUIRED
     fun schedule(occurrence: ScheduledOccurrence): PlatformScheduleResult
     fun cancel(occurrence: ScheduledOccurrence)
 }
@@ -50,8 +51,11 @@ class AndroidOneShotAlarmScheduler @Inject constructor(
 ) : OneShotAlarmScheduler {
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
 
+    override fun canScheduleExactAlarms(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+
     override fun access(): SchedulingAccess = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms() ->
+        !canScheduleExactAlarms() ->
             SchedulingAccess.EXACT_ALARM_ACCESS_REQUIRED
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED ->
@@ -62,22 +66,30 @@ class AndroidOneShotAlarmScheduler @Inject constructor(
     }
 
     override fun schedule(occurrence: ScheduledOccurrence): PlatformScheduleResult {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+        if (!canScheduleExactAlarms()) {
             return PlatformScheduleResult.ExactAlarmAccessRequired
         }
         return try {
-            alarmManager.setAlarmClock(
-                AlarmManager.AlarmClockInfo(
-                    occurrence.triggerAtEpochMillis,
-                    PendingIntent.getActivity(
-                        context,
-                        occurrence.requestCode(),
-                        Intent(context, MainActivity::class.java),
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            if (occurrence.elapsedDeadlineMillis != null) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    occurrence.elapsedDeadlineMillis,
+                    occurrence.pendingIntent(),
+                )
+            } else {
+                alarmManager.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(
+                        occurrence.triggerAtEpochMillis,
+                        PendingIntent.getActivity(
+                            context,
+                            occurrence.requestCode(),
+                            Intent(context, MainActivity::class.java),
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                        ),
                     ),
-                ),
-                occurrence.pendingIntent(),
-            )
+                    occurrence.pendingIntent(),
+                )
+            }
             PlatformScheduleResult.Scheduled
         } catch (_: SecurityException) {
             PlatformScheduleResult.ExactAlarmAccessRequired
@@ -121,9 +133,10 @@ internal fun Alarm.nextOccurrence(): ScheduledOccurrence? = scheduledOccurrenceI
     }
 }
 
-internal fun newOccurrence(alarm: Alarm): ScheduledOccurrence = ScheduledOccurrence(
-    alarmId = alarm.id,
-    occurrenceId = UUID.randomUUID().toString(),
-    revision = alarm.scheduleRevision + 1,
-    triggerAtEpochMillis = requireNotNull(alarm.resolvedOneShotAt).toEpochMilli(),
-)
+internal fun Alarm.pendingSnooze(): ScheduledOccurrence? = snoozeOccurrenceId?.let { occurrenceId ->
+    snoozedAt?.let { at ->
+        snoozeRevision?.let { revision ->
+            ScheduledOccurrence(id, occurrenceId, revision, at.toEpochMilli(), snoozeElapsedDeadlineMillis)
+        }
+    }
+}

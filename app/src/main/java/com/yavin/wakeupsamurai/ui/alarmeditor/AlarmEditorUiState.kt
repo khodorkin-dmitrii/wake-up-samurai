@@ -30,6 +30,7 @@ data class AlarmEditorUiState(
     val audioSourceText: String? = null,
     val recordingState: RecordingState = RecordingState.Idle,
     val schedulingState: AlarmSchedulingState = AlarmSchedulingState.NOT_SCHEDULED,
+    val hasPendingRegularOccurrence: Boolean = false,
     val schedulingAccessRequest: SchedulingAccessRequest? = null,
 ) {
     val canGenerate: Boolean

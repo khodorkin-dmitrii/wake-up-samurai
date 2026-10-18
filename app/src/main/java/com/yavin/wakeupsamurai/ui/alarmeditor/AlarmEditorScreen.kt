@@ -436,13 +436,14 @@ fun AlarmEditorScreen(
                     Text("Enabled intent")
                     Text(
                         when {
-                            uiState.repeatDays.isNotEmpty() -> "Recurring execution is not supported yet."
-                            uiState.schedulingState.name == "SCHEDULED" -> "Scheduled with Android."
-                            uiState.configuredEnabled -> "Save to request access and schedule this one-shot alarm."
-                            else -> "Enable and save to schedule this one-shot alarm."
+                            uiState.isScheduleDirty && uiState.configuredEnabled -> "Save to apply this schedule."
+                            uiState.hasPendingRegularOccurrence && uiState.configuredEnabled -> "Scheduled with Android."
+                            uiState.schedulingState.name == "SNOOZED" && uiState.configuredEnabled -> "Snoozed with Android."
+                            uiState.configuredEnabled -> "Save to request access and schedule this alarm."
+                            else -> "Enable and save to schedule this alarm."
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (uiState.repeatDays.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Switch(checked = uiState.configuredEnabled, onCheckedChange = onConfiguredEnabledChanged)

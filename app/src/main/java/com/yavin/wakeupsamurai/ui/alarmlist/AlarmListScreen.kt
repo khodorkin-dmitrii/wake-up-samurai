@@ -336,7 +336,7 @@ private fun AlarmListItemEnabledPreview() = AlarmListItemPreview(alarmListPrevie
 @Composable
 private fun AlarmListItemDisabledPreview() = AlarmListItemPreview(alarmListPreviewItems[1])
 
-@Preview(name = "Alarm snoozed", showBackground = true)
+@Preview(name = "Recurring with snooze", showBackground = true)
 @Composable
 private fun AlarmListItemSnoozedPreview() = AlarmListItemPreview(alarmListPreviewItems[2])
 
@@ -383,15 +383,15 @@ private val alarmListPreviewItems = listOf(
     ),
     AlarmListItemUi(
         id = "snoozed-alarm",
-        time = "06:45",
-        repeatSummary = "Once",
+        time = "07:00",
+        repeatSummary = "Mon, Tue, Wed, Thu, Fri",
         title = "Future me says: five more minutes",
-        nextOccurrence = "Today at 06:45",
+        nextOccurrence = "Next regular: Tomorrow at 07:00",
         configuredEnabled = true,
         readinessProblem = null,
         schedulingState = "Snoozed",
-        snoozedUntil = "06:50",
-        nextOccurrenceAt = Instant.now().plus(Duration.ofMinutes(4)),
+        snoozedUntil = "Today at 07:05",
+        nextOccurrenceAt = Instant.now().plus(Duration.ofDays(1)),
         hasScheduledUpcomingOccurrence = true,
     ),
     AlarmListItemUi(

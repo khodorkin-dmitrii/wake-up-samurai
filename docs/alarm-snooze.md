@@ -2,11 +2,11 @@
 
 ## Five-minute snooze policy
 
-Wake Up, Samurai schedules snooze with the same `AlarmManager.setAlarmClock()` path as an ordinary one-shot alarm. At the moment the user taps **Snooze 5 min**, the app calculates an exact wall-clock trigger as `now + five minutes` and persists a new occurrence ID, revision and trigger instant as `SNOOZED`.
+Wake Up, Samurai schedules snooze with `AlarmManager.setExactAndAllowWhileIdle(ELAPSED_REALTIME_WAKEUP)` at the monotonic action time plus five minutes. It persists the occurrence ID, revision, elapsed deadline, boot count, and a wall-clock recovery instant as `SNOOZED`.
 
-`setAlarmClock()` is an `RTC_WAKEUP` API, so this milestone deliberately uses wall-clock time; it does not claim elapsed-realtime semantics. The new occurrence survives ordinary process recreation because its identity and pending time are in Room. A device time change can move the wall-clock instant; broader time-change/reboot reconciliation remains deferred.
+Within the same boot, device time and time-zone changes do not shift the five-minute delay; the displayed wall-clock time is refreshed from the remaining monotonic duration. After a reboot, the elapsed counter is invalid, so reconciliation uses the persisted wall-clock recovery instant and re-establishes a new elapsed deadline. An overdue snooze is expired rather than played late. The scheduled PendingIntent survives ordinary process recreation, while reboot/update/access changes are handled by [schedule recovery](alarm-recovery.md).
 
-The platform occurrence is created first, then Room atomically replaces the exact `RINGING` occurrence. If that compare-and-set loses to Dismiss, timeout, or another Snooze, the newly created platform entry is cancelled. A successful replacement stops the current player/service; a failed or blocked replacement leaves the current ringing session active and dismissible.
+The platform occurrence is created first, then Room atomically moves the exact `RINGING` occurrence into the separate snooze slot. If that compare-and-set loses to Dismiss, timeout, or another Snooze, the newly created platform entry is cancelled. A successful replacement stops the current player/service; a failed or blocked replacement leaves the current ringing session active and dismissible. For recurring alarms, the next regular weekday remains scheduled independently; see [recurring alarms](alarm-recurring.md).
 
 ## Presentation and access
 

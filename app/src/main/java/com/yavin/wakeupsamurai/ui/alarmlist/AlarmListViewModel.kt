@@ -49,40 +49,43 @@ class AlarmListViewModel @Inject constructor(
                     val alarm = row.alarm
                     val audio = row.audioAsset
                     val problem = when {
+                        alarm.lastRingingFailure != null -> alarm.lastRingingFailure
+                        alarm.schedulingState == AlarmSchedulingState.MISSED ->
+                            "This occurrence was missed while scheduling was unavailable. Save or enable it again to choose a new time."
                         audio == null -> "Add or generate audio before enabling."
                         !storage.isReadable(audio.relativePath) -> "The selected audio file is unavailable."
                         alarm.audioSelectionKind != AudioSelectionKind.SAVED_ASSET &&
                             audio.sourceText != alarm.messageText.trim() ->
                             "The message changed; regenerate audio or restore its text."
-                        alarm.repeatDays.isNotEmpty() && alarm.configuredEnabled ->
-                            "Recurring execution is not supported yet."
                         alarm.configuredEnabled && alarm.schedulingState.name.startsWith("BLOCKED") ->
                             "System access is needed before this alarm can ring."
-                        alarm.schedulingState == AlarmSchedulingState.SNOOZED -> null
-                        alarm.configuredEnabled && alarm.schedulingState != com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState.SCHEDULED ->
+                        alarm.configuredEnabled && alarm.repeatDays.isNotEmpty() && alarm.scheduledOccurrenceId == null ->
+                            "The next repeat is not scheduled. Open this alarm and save to retry."
+                        alarm.configuredEnabled && alarm.scheduledOccurrenceId == null && alarm.snoozeOccurrenceId == null &&
+                            alarm.ringingOccurrenceId == null ->
                             "This alarm has not been scheduled yet. Open it and save again."
                         else -> null
                     }
-                    val next = if (alarm.schedulingState == AlarmSchedulingState.SNOOZED) {
-                        alarm.scheduledAt
-                    } else if (alarm.repeatDays.isEmpty()) alarm.resolvedOneShotAt else {
+                    val nextRegular = alarm.scheduledAt ?: if (alarm.repeatDays.isNotEmpty()) {
                         calculator.recurringStrictlyAfter(now, zone, alarm.time, alarm.repeatDays)
-                    }
+                    } else alarm.resolvedOneShotAt
+                    val next = if (alarm.repeatDays.isEmpty() && alarm.snoozedAt != null) alarm.snoozedAt else nextRegular
                     AlarmListItemUi(
                         id = alarm.id,
                         time = alarm.time.format(DateTimeFormatter.ofPattern("HH:mm")),
                         repeatSummary = repeatSummary(alarm.repeatDays),
                         title = alarm.label.ifBlank { alarm.messageText.ifBlank { "Untitled alarm" } },
-                        nextOccurrence = occurrenceSummary(next, now, zone),
+                        nextOccurrence = if (alarm.repeatDays.isNotEmpty()) {
+                            "Next regular: ${occurrenceSummary(nextRegular, now, zone)}"
+                        } else occurrenceSummary(next, now, zone),
                         configuredEnabled = alarm.configuredEnabled,
                         readinessProblem = problem,
                         schedulingState = alarm.schedulingState.name,
-                        snoozedUntil = if (alarm.schedulingState == AlarmSchedulingState.SNOOZED) {
-                            alarm.scheduledAt?.let { occurrenceSummary(it, now, zone) }
-                        } else null,
+                        snoozedUntil = alarm.snoozedAt?.let { occurrenceSummary(it, now, zone) },
                         nextOccurrenceAt = next,
                         hasScheduledUpcomingOccurrence = alarm.configuredEnabled &&
-                            alarm.schedulingState in setOf(AlarmSchedulingState.SCHEDULED, AlarmSchedulingState.SNOOZED),
+                            (alarm.scheduledOccurrenceId != null ||
+                                (alarm.repeatDays.isEmpty() && alarm.snoozeOccurrenceId != null)),
                     )
                     },
                     currentTime = now,
@@ -206,7 +209,7 @@ class AlarmListViewModel @Inject constructor(
                     message = "The Ringing alarms channel is still disabled.",
                     schedulingAccessRequest = SchedulingAccessRequest.ALARM_CHANNEL,
                 )
-                is AlarmSaveResult.SavedWithoutSchedule -> Unit
+                is AlarmSaveResult.SavedWithoutSchedule -> awaitingAccessAlarmId = null
                 is AlarmSaveResult.Failed -> _uiState.value = _uiState.value.copy(message = result.message)
             }
         }

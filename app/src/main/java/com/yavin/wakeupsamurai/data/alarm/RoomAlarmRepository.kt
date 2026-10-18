@@ -9,6 +9,7 @@ import com.yavin.wakeupsamurai.data.local.AudioAssetEntity
 import com.yavin.wakeupsamurai.domain.alarm.Alarm
 import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
 import com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState
+import com.yavin.wakeupsamurai.domain.alarm.DeliveryClaim
 import com.yavin.wakeupsamurai.domain.alarm.AlarmWithAudio
 import com.yavin.wakeupsamurai.domain.alarm.AudioSelectionKind
 import com.yavin.wakeupsamurai.domain.alarm.AudioAsset
@@ -39,19 +40,35 @@ class RoomAlarmRepository @Inject constructor(
     }
     override suspend fun delete(id: String) = alarmDao.delete(id)
 
-    override suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long): Boolean =
-        alarmDao.claimScheduledOccurrence(alarmId, occurrenceId, revision) == 1
+    override suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long, bootId: Long,
+        deadlineElapsedMillis: Long): DeliveryClaim = when {
+        alarmDao.claimRegular(alarmId, occurrenceId, revision, bootId, deadlineElapsedMillis) == 1 -> DeliveryClaim.REGULAR
+        alarmDao.skipRegular(alarmId, occurrenceId, revision) == 1 -> DeliveryClaim.SKIPPED_REGULAR
+        alarmDao.claimSnooze(alarmId, occurrenceId, revision, bootId, deadlineElapsedMillis) == 1 -> DeliveryClaim.SNOOZE
+        alarmDao.skipSnooze(alarmId, occurrenceId, revision) == 1 -> DeliveryClaim.SKIPPED_SNOOZE
+        else -> DeliveryClaim.STALE
+    }
+
+    override suspend fun installNextRegular(
+        alarmId: String, previousRevision: Long, occurrenceId: String, revision: Long, at: Long, bootId: Long,
+    ): Boolean = alarmDao.installNextRegular(alarmId, previousRevision, occurrenceId, revision, at, bootId) == 1
+
+    override suspend fun markRegularSchedulingFailed(
+        alarmId: String, previousRevision: Long, state: AlarmSchedulingState,
+    ): Boolean = alarmDao.markRegularSchedulingFailed(alarmId, previousRevision, state.name) == 1
 
     override suspend fun finishOccurrence(
         alarmId: String,
         occurrenceId: String,
         revision: Long,
         finalState: AlarmSchedulingState,
+        failureMessage: String?,
     ): Boolean = alarmDao.finishRingingOccurrence(
         alarmId = alarmId,
         occurrenceId = occurrenceId,
         revision = revision,
         finalState = finalState.name,
+        failureMessage = failureMessage,
     ) == 1
 
     override suspend fun replaceRingingWithSnooze(
@@ -61,11 +78,17 @@ class RoomAlarmRepository @Inject constructor(
         snoozeOccurrenceId: String,
         snoozeRevision: Long,
         snoozedAtEpochMillis: Long,
+        elapsedDeadlineMillis: Long,
+        bootId: Long,
     ): Boolean = usageRegistry.withWriteLock {
         alarmDao.replaceRingingWithSnooze(
-            alarmId, ringingOccurrenceId, ringingRevision, snoozeOccurrenceId, snoozeRevision, snoozedAtEpochMillis,
+            alarmId, ringingOccurrenceId, ringingRevision, snoozeOccurrenceId, snoozeRevision,
+            snoozedAtEpochMillis, elapsedDeadlineMillis, bootId,
         ) == 1
     }
+
+    override suspend fun clearPendingSnooze(alarmId: String, occurrenceId: String, revision: Long): Boolean =
+        alarmDao.clearPendingSnooze(alarmId, occurrenceId, revision) == 1
 }
 
 @Singleton
@@ -122,6 +145,18 @@ private fun Alarm.toEntity() = AlarmEntity(
     scheduledOccurrenceId = scheduledOccurrenceId,
     scheduledAtEpochMillis = scheduledAt?.toEpochMilli(),
     schedulingState = schedulingState.name,
+    snoozeOccurrenceId = snoozeOccurrenceId,
+    snoozeRevision = snoozeRevision,
+    snoozedAtEpochMillis = snoozedAt?.toEpochMilli(),
+    ringingOccurrenceId = ringingOccurrenceId,
+    ringingRevision = ringingRevision,
+    regularScheduledBootId = regularScheduledBootId,
+    snoozeScheduledBootId = snoozeScheduledBootId,
+    snoozeElapsedDeadlineMillis = snoozeElapsedDeadlineMillis,
+    ringingBootId = ringingBootId,
+    lastRegularDeliveredAtEpochMillis = lastRegularDeliveredAt?.toEpochMilli(),
+    ringingDeadlineElapsedMillis = ringingDeadlineElapsedMillis,
+    lastRingingFailure = lastRingingFailure,
 )
 
 private fun AlarmWithAudioEntity.toDomain() = AlarmWithAudio(
@@ -144,6 +179,18 @@ private fun AlarmWithAudioEntity.toDomain() = AlarmWithAudio(
         scheduledAt = alarm.scheduledAtEpochMillis?.let(Instant::ofEpochMilli),
         schedulingState = runCatching { AlarmSchedulingState.valueOf(alarm.schedulingState) }
             .getOrDefault(AlarmSchedulingState.NOT_SCHEDULED),
+        snoozeOccurrenceId = alarm.snoozeOccurrenceId,
+        snoozeRevision = alarm.snoozeRevision,
+        snoozedAt = alarm.snoozedAtEpochMillis?.let(Instant::ofEpochMilli),
+        ringingOccurrenceId = alarm.ringingOccurrenceId,
+        ringingRevision = alarm.ringingRevision,
+        regularScheduledBootId = alarm.regularScheduledBootId,
+        snoozeScheduledBootId = alarm.snoozeScheduledBootId,
+        snoozeElapsedDeadlineMillis = alarm.snoozeElapsedDeadlineMillis,
+        ringingBootId = alarm.ringingBootId,
+        lastRegularDeliveredAt = alarm.lastRegularDeliveredAtEpochMillis?.let(Instant::ofEpochMilli),
+        ringingDeadlineElapsedMillis = alarm.ringingDeadlineElapsedMillis,
+        lastRingingFailure = alarm.lastRingingFailure,
     ),
     audioAsset = audioAsset?.toDomain(),
 )

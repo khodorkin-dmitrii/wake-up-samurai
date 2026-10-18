@@ -53,6 +53,22 @@ class NextOccurrenceCalculatorTest {
         )!!
         assertEquals(Instant.parse("2026-10-25T00:30:00Z"), result)
         assertTrue(result.atZone(zone).offset.totalSeconds > 0)
+        assertEquals(
+            Instant.parse("2026-11-01T01:30:00Z"),
+            calculator.recurringStrictlyAfter(result, zone, LocalTime.of(2, 30), setOf(DayOfWeek.SUNDAY)),
+        )
+    }
+
+    @Test fun recurringDstGapAdvancesToNextSelectedWeekAfterShiftedDelivery() {
+        val zone = ZoneId.of("Europe/Budapest")
+        val first = calculator.recurringStrictlyAfter(
+            Instant.parse("2026-03-28T12:00:00Z"), zone, LocalTime.of(2, 30), setOf(DayOfWeek.SUNDAY),
+        )!!
+        assertEquals(Instant.parse("2026-03-29T01:30:00Z"), first)
+        assertEquals(
+            Instant.parse("2026-04-05T00:30:00Z"),
+            calculator.recurringStrictlyAfter(first, zone, LocalTime.of(2, 30), setOf(DayOfWeek.SUNDAY)),
+        )
     }
 
     @Test fun timeZoneChangesResultingInstant() {

@@ -17,10 +17,10 @@ Steps 1–3 provide the Compose foundation, experimental direct Edge TTS generat
 and Media3 preview, plus Room-backed alarm definitions with stable IDs, reusable
 audio-asset metadata, time/repeat editing, and next-occurrence calculation.
 
-Step 5A adds the first bounded execution path: a newly saved, enabled one-shot
-alarm is scheduled with `AlarmManager.setAlarmClock()`, then rings from its local
-audio in a foreground service. Recurring execution, reboot recovery, snooze and
-full-screen UI remain deliberately out of scope. Completed audio lives under
+Step 5A added the first bounded execution path with `AlarmManager.setAlarmClock()`
+and local audio in a foreground service. Later steps added full-screen ringing,
+five-minute snooze, exact weekday repeats, and after-first-unlock schedule
+recovery. Completed audio lives under
 durable app-owned storage and is not removed when a preview is replaced or an
 alarm is deleted.
 

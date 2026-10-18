@@ -48,6 +48,18 @@ data class AlarmEntity(
     val scheduledOccurrenceId: String?,
     val scheduledAtEpochMillis: Long?,
     val schedulingState: String,
+    val snoozeOccurrenceId: String?,
+    val snoozeRevision: Long?,
+    val snoozedAtEpochMillis: Long?,
+    val ringingOccurrenceId: String?,
+    val ringingRevision: Long?,
+    val regularScheduledBootId: Long?,
+    val snoozeScheduledBootId: Long?,
+    val snoozeElapsedDeadlineMillis: Long?,
+    val ringingBootId: Long?,
+    val lastRegularDeliveredAtEpochMillis: Long?,
+    val ringingDeadlineElapsedMillis: Long?,
+    val lastRingingFailure: String?,
 )
 
 data class AlarmWithAudioEntity(
