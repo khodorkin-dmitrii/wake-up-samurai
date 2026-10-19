@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
@@ -21,12 +22,15 @@ import com.yavin.wakeupsamurai.ui.savedaudio.SavedAudioPickerScreen
 import com.yavin.wakeupsamurai.ui.audiolibrary.AudioLibraryScreen
 import com.yavin.wakeupsamurai.ui.audiolibrary.AudioLibraryViewModel
 import com.yavin.wakeupsamurai.alarm.RingingNotificationChannel
+import com.yavin.wakeupsamurai.domain.theme.AppThemeMode
 
 @Composable
 fun WakeUpSamuraiNavHost(
     alarmListViewModel: AlarmListViewModel,
     alarmEditorViewModel: AlarmEditorViewModel,
     audioLibraryViewModel: AudioLibraryViewModel,
+    themeMode: AppThemeMode,
+    onCycleThemeMode: (Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val backStack = rememberNavBackStack(AlarmListKey)
@@ -58,7 +62,15 @@ fun WakeUpSamuraiNavHost(
                     onCancelSnooze = alarmListViewModel::cancelSnooze,
                     onManageAudio = dropUnlessResumed { backStack.pushAudioLibraryIfAbsentOnTop() },
                     onNotificationPermissionResult = alarmListViewModel::onNotificationPermissionResult,
+                    onOpenAlarmChannelSettings = {
+                        context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            putExtra(Settings.EXTRA_CHANNEL_ID, RingingNotificationChannel.ID)
+                        })
+                    },
                     onTimeTick = alarmListViewModel::refreshTime,
+                    themeMode = themeMode,
+                    onCycleThemeMode = onCycleThemeMode,
                 )
             }
             entry<AlarmEditorKey> { key ->
@@ -113,6 +125,8 @@ fun WakeUpSamuraiNavHost(
                     onConfirmDiscard = alarmEditorViewModel::onConfirmDiscard,
                     onDismissDiscard = alarmEditorViewModel::onDismissDiscard,
                     onBack = alarmEditorViewModel::onBackRequested,
+                    themeMode = themeMode,
+                    onCycleThemeMode = onCycleThemeMode,
                 )
             }
             entry<SavedAudioPickerKey> {
@@ -132,6 +146,8 @@ fun WakeUpSamuraiNavHost(
                         alarmEditorViewModel.onLeaveSavedAudioPicker()
                         backStack.popIfTop(SavedAudioPickerKey)
                     },
+                    themeMode = themeMode,
+                    onCycleThemeMode = onCycleThemeMode,
                 )
             }
             entry<AudioLibraryKey> {
@@ -147,6 +163,8 @@ fun WakeUpSamuraiNavHost(
                     onDismissCleanup = audioLibraryViewModel::onDismissCleanup,
                     onConfirmCleanup = audioLibraryViewModel::onConfirmCleanup,
                     onBack = { backStack.popIfTop(AudioLibraryKey) },
+                    themeMode = themeMode,
+                    onCycleThemeMode = onCycleThemeMode,
                 )
             }
         },

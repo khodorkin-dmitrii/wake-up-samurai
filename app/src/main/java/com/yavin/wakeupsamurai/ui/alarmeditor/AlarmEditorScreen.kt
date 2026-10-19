@@ -57,6 +57,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -68,6 +69,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.yavin.wakeupsamurai.R
+import com.yavin.wakeupsamurai.domain.theme.AppThemeMode
+import com.yavin.wakeupsamurai.ui.components.ThemeModeAction
 import com.yavin.wakeupsamurai.ui.theme.WakeUpSamuraiTheme
 import com.yavin.wakeupsamurai.ui.components.GradientFilledIconButton
 import java.time.DayOfWeek
@@ -108,6 +111,8 @@ fun AlarmEditorScreen(
     onConfirmDiscard: () -> Unit,
     onDismissDiscard: () -> Unit,
     onBack: () -> Unit,
+    themeMode: AppThemeMode,
+    onCycleThemeMode: (Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
@@ -215,6 +220,7 @@ fun AlarmEditorScreen(
                             contentDescription = stringResource(R.string.try_phrase),
                         )
                     }
+                    ThemeModeAction(themeMode = themeMode, onCycleThemeMode = onCycleThemeMode)
                 },
             )
         },
@@ -766,6 +772,8 @@ private fun AlarmEditorScreenPreview() {
             onConfirmDiscard = {},
             onDismissDiscard = {},
             onBack = {},
+            themeMode = AppThemeMode.SYSTEM,
+            onCycleThemeMode = {},
         )
     }
 }

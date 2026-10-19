@@ -4,6 +4,10 @@
     <string name="empty_state_title">Your mornings are wide open</string>
     <string name="empty_state_body">Leave tomorrow-you a reason to get up — serious, sweet, or gloriously silly.</string>
     <string name="add_alarm">Add alarm</string>
+    <string name="manage_audio">Manage audio</string>
+    <string name="theme_system">System theme</string>
+    <string name="theme_light">Light theme</string>
+    <string name="theme_dark">Dark theme</string>
     <string name="editor_title">What are we waking up for?</string>
     <string name="new_alarm">New alarm</string>
     <string name="edit_alarm">Edit alarm</string>

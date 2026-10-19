@@ -21,10 +21,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.yavin.wakeupsamurai.ui.alarmeditor.SavedAudioItemUi
 import com.yavin.wakeupsamurai.ui.alarmeditor.SavedAudioPickerUiState
+import com.yavin.wakeupsamurai.domain.theme.AppThemeMode
+import com.yavin.wakeupsamurai.ui.components.ThemeModeAction
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,6 +37,8 @@ fun SavedAudioPickerScreen(
     onPreview: (String) -> Unit,
     onChoose: (String) -> Unit,
     onBack: () -> Unit,
+    themeMode: AppThemeMode,
+    onCycleThemeMode: (Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -43,6 +48,9 @@ fun SavedAudioPickerScreen(
             TopAppBar(
                 title = { Text("Choose saved audio") },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                actions = {
+                    ThemeModeAction(themeMode = themeMode, onCycleThemeMode = onCycleThemeMode)
+                },
             )
         },
     ) { innerPadding ->

@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -20,6 +21,8 @@ import com.yavin.wakeupsamurai.ui.ringing.RingingScreen
 import com.yavin.wakeupsamurai.ui.ringing.RingingUiState
 import com.yavin.wakeupsamurai.ui.ringing.RingingViewModel
 import com.yavin.wakeupsamurai.ui.theme.WakeUpSamuraiTheme
+import com.yavin.wakeupsamurai.ui.theme.AppThemeViewModel
+import com.yavin.wakeupsamurai.ui.theme.resolveDarkTheme
 import dagger.hilt.android.AndroidEntryPoint
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
@@ -35,6 +38,7 @@ class RingingActivity : ComponentActivity() {
     @Inject lateinit var alarmCoordinator: OneShotAlarmCoordinator
     @Inject lateinit var ringingRecoveryStarter: RingingRecoveryStarter
     private val viewModel: RingingViewModel by viewModels()
+    private val appThemeViewModel: AppThemeViewModel by viewModels()
 
     override fun onResume() {
         super.onResume()
@@ -52,10 +56,11 @@ class RingingActivity : ComponentActivity() {
         viewModel.observe(occurrence)
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
+            val themeMode by appThemeViewModel.themeMode.collectAsStateWithLifecycle()
             LaunchedEffect(state) {
                 if (state == RingingUiState.Ended) finish()
             }
-            WakeUpSamuraiTheme {
+            WakeUpSamuraiTheme(darkTheme = themeMode.resolveDarkTheme(isSystemInDarkTheme())) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     RingingScreen(state = state, onDismiss = viewModel::dismiss, onSnooze = viewModel::snooze)
                 }

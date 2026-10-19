@@ -22,8 +22,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.yavin.wakeupsamurai.domain.theme.AppThemeMode
+import com.yavin.wakeupsamurai.ui.components.ThemeModeAction
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,13 +41,26 @@ fun AudioLibraryScreen(
     onDismissCleanup: () -> Unit,
     onConfirmCleanup: () -> Unit,
     onBack: () -> Unit,
+    themeMode: AppThemeMode,
+    onCycleThemeMode: (Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pending = uiState.assets.firstOrNull { it.id == uiState.pendingDeleteAssetId }
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { TopAppBar(title = { Text("Manage audio") }, navigationIcon = { TextButton(onClick = onBack) { Text("Back") } }, actions = { TextButton(onClick = onCleanupRequested, enabled = !uiState.isDeleting) { Text("Clean up") } }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Manage audio") },
+                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                actions = {
+                    TextButton(onClick = onCleanupRequested, enabled = !uiState.isDeleting) {
+                        Text("Clean up")
+                    }
+                    ThemeModeAction(themeMode = themeMode, onCycleThemeMode = onCycleThemeMode)
+                },
+            )
+        },
     ) { innerPadding ->
         if (uiState.assets.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(innerPadding).padding(32.dp), contentAlignment = Alignment.Center) { Text("No saved audio yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
