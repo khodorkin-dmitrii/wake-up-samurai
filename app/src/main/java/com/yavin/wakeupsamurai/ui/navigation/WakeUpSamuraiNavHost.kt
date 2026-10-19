@@ -1,10 +1,13 @@
 package com.yavin.wakeupsamurai.ui.navigation
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.navigation3.runtime.entryProvider
@@ -17,6 +20,7 @@ import com.yavin.wakeupsamurai.ui.alarmlist.AlarmListViewModel
 import com.yavin.wakeupsamurai.ui.savedaudio.SavedAudioPickerScreen
 import com.yavin.wakeupsamurai.ui.audiolibrary.AudioLibraryScreen
 import com.yavin.wakeupsamurai.ui.audiolibrary.AudioLibraryViewModel
+import com.yavin.wakeupsamurai.alarm.RingingNotificationChannel
 
 @Composable
 fun WakeUpSamuraiNavHost(
@@ -26,6 +30,7 @@ fun WakeUpSamuraiNavHost(
     modifier: Modifier = Modifier,
 ) {
     val backStack = rememberNavBackStack(AlarmListKey)
+    val context = LocalContext.current
 
     NavDisplay(
         backStack = backStack,
@@ -71,6 +76,7 @@ fun WakeUpSamuraiNavHost(
                 }
                 AlarmEditorScreen(
                     uiState = uiState,
+                    onAudioCreationModeChanged = alarmEditorViewModel::onAudioCreationModeChanged,
                     onMessageDraftChanged = alarmEditorViewModel::onMessageDraftChanged,
                     onTryPhrase = alarmEditorViewModel::onTryPhrase,
                     onConfirmSuggestionReplacement = alarmEditorViewModel::onConfirmSuggestionReplacement,
@@ -93,6 +99,12 @@ fun WakeUpSamuraiNavHost(
                     onRepeatDayToggled = alarmEditorViewModel::onRepeatDayToggled,
                     onConfiguredEnabledChanged = alarmEditorViewModel::onConfiguredEnabledChanged,
                     onNotificationPermissionResult = alarmEditorViewModel::onNotificationPermissionResult,
+                    onOpenAlarmChannelSettings = {
+                        context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            putExtra(Settings.EXTRA_CHANNEL_ID, RingingNotificationChannel.ID)
+                        })
+                    },
                     onRestoreAudioText = alarmEditorViewModel::onRestoreAudioText,
                     onSave = alarmEditorViewModel::onSave,
                     onDeleteRequested = alarmEditorViewModel::onDeleteRequested,

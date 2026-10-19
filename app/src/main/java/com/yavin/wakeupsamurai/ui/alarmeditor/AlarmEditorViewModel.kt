@@ -122,7 +122,7 @@ class AlarmEditorViewModel @Inject constructor(
         assetUsageRegistry.setEditorDraftAsset(null)
         generationJob?.cancel()
         audioPreview.stop()
-        _uiState.value = AlarmEditorUiState(isLoading = alarmId != null)
+        _uiState.value = AlarmEditorUiState(isLoading = alarmId != null, alarmId = alarmId)
         loadedAlarm = null
         generatedSpeech = null
         if (alarmId == null) {
@@ -181,6 +181,14 @@ class AlarmEditorViewModel @Inject constructor(
 
     fun onLabelChanged(value: String) = edit { copy(label = value) }
 
+    fun onAudioCreationModeChanged(mode: AudioCreationMode) {
+        if (_uiState.value.recordingState is RecordingState.Recording ||
+            _uiState.value.recordingState is RecordingState.AwaitingPermission ||
+            _uiState.value.recordingState is RecordingState.Reviewing
+        ) return
+        _uiState.update { it.copy(audioCreationMode = mode) }
+    }
+
     fun onMessageDraftChanged(message: String) {
         if (message == _uiState.value.messageDraft) return
         if (_uiState.value.generationStatus is GenerationStatus.Generating) cancelGeneration()
@@ -233,7 +241,13 @@ class AlarmEditorViewModel @Inject constructor(
         if (!state.canGenerate || generationJob?.isActive == true) return
         val requestId = ++activeRequestId
         val request = SpeechGenerationRequest(state.messageDraft, SpikeVoices.forText(state.messageDraft), state.draftRevision)
-        _uiState.update { it.copy(generationStatus = GenerationStatus.Generating(request.revision), previewErrorMessage = null) }
+        _uiState.update {
+            it.copy(
+                audioCreationMode = AudioCreationMode.TEXT,
+                generationStatus = GenerationStatus.Generating(request.revision),
+                previewErrorMessage = null,
+            )
+        }
         generationJob = viewModelScope.launch {
             try {
                 val result = withTimeout(GENERATION_TIMEOUT_MILLIS) { speechGeneration.generate(request) }
@@ -280,7 +294,13 @@ class AlarmEditorViewModel @Inject constructor(
             _uiState.value.recordingState is RecordingState.AwaitingPermission
         ) return
         audioPreview.stop()
-        _uiState.update { it.copy(recordingState = RecordingState.AwaitingPermission, previewErrorMessage = null) }
+        _uiState.update {
+            it.copy(
+                audioCreationMode = AudioCreationMode.VOICE,
+                recordingState = RecordingState.AwaitingPermission,
+                previewErrorMessage = null,
+            )
+        }
     }
 
     fun onMicrophonePermissionResult(granted: Boolean, permanentlyDenied: Boolean) {

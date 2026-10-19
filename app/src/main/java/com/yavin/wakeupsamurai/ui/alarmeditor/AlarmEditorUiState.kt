@@ -9,6 +9,7 @@ data class AlarmEditorUiState(
     val label: String = "",
     val messageDraft: String = "",
     val draftRevision: Long = 0L,
+    val audioCreationMode: AudioCreationMode = AudioCreationMode.TEXT,
     val generationStatus: GenerationStatus = GenerationStatus.Idle,
     val generatedAudio: GeneratedAudioUi? = null,
     val isPreviewPlaying: Boolean = false,
@@ -41,6 +42,11 @@ data class AlarmEditorUiState(
 
     val canRestoreAudioText: Boolean
         get() = isGeneratedAudioOutdated && audioSourceText != null
+}
+
+enum class AudioCreationMode {
+    TEXT,
+    VOICE,
 }
 
 sealed interface RecordingState {
