@@ -111,7 +111,7 @@ private class FakeRepository(initial: Alarm) : AlarmRepository {
     val rows = MutableStateFlow(listOf(AlarmWithAudio(initial, null)))
     override fun observeAll(): Flow<List<AlarmWithAudio>> = rows
     override suspend fun get(id: String): AlarmWithAudio? = rows.value.firstOrNull { it.alarm.id == id }
-    override suspend fun save(alarm: Alarm) = Unit
+    override suspend fun save(alarm: Alarm) = alarm
     override suspend fun delete(id: String) = Unit
     override suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long, bootId: Long,
         deadlineElapsedMillis: Long) =

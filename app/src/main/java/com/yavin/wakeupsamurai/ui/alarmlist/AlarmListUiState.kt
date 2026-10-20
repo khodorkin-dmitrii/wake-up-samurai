@@ -5,6 +5,7 @@ import java.time.Instant
 data class AlarmListUiState(
     val alarms: List<AlarmListItemUi> = emptyList(),
     val currentTime: Instant = Instant.now(),
+    val nearestScheduledOccurrenceAt: Instant? = null,
     val message: String? = null,
     val schedulingAccessRequest: SchedulingAccessRequest? = null,
     val fullScreenIntentUnavailable: Boolean = false,

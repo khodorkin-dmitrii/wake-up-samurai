@@ -1,6 +1,8 @@
 package com.yavin.wakeupsamurai.data.local
 
 import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
@@ -164,4 +166,16 @@ interface AudioAssetDao {
 
     @Upsert
     suspend fun upsert(asset: AudioAssetEntity)
+}
+
+@Dao
+interface AlarmNamingStateDao {
+    @Query("SELECT * FROM alarm_naming_state WHERE id = :id")
+    suspend fun get(id: Int = AlarmNamingStateEntity.SINGLETON_ID): AlarmNamingStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(state: AlarmNamingStateEntity)
+
+    @Query("UPDATE alarm_naming_state SET nextVoiceSequence = :nextValue WHERE id = :id")
+    suspend fun updateNextVoiceSequence(id: Int, nextValue: Long)
 }

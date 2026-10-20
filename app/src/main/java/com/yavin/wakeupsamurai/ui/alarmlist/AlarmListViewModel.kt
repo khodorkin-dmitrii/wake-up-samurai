@@ -9,6 +9,7 @@ import com.yavin.wakeupsamurai.alarm.FullScreenIntentAccess
 import com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState
 import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
 import com.yavin.wakeupsamurai.domain.alarm.AudioSelectionKind
+import com.yavin.wakeupsamurai.domain.alarm.resolvedTitle
 import com.yavin.wakeupsamurai.domain.alarm.NextOccurrenceCalculator
 import com.yavin.wakeupsamurai.domain.alarm.TimeProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -74,7 +75,7 @@ class AlarmListViewModel @Inject constructor(
                         id = alarm.id,
                         time = alarm.time.format(DateTimeFormatter.ofPattern("HH:mm")),
                         repeatSummary = repeatSummary(alarm.repeatDays),
-                        title = alarm.label.ifBlank { alarm.messageText.ifBlank { "Untitled alarm" } },
+                        title = alarm.resolvedTitle(),
                         nextOccurrence = if (alarm.repeatDays.isNotEmpty()) {
                             "Next regular: ${occurrenceSummary(nextRegular, now, zone)}"
                         } else occurrenceSummary(next, now, zone),
@@ -89,6 +90,17 @@ class AlarmListViewModel @Inject constructor(
                     )
                     },
                     currentTime = now,
+                    nearestScheduledOccurrenceAt = alarms.asSequence()
+                        .filter { it.alarm.configuredEnabled }
+                        .flatMap { row ->
+                            sequenceOf(
+                                row.alarm.scheduledAt.takeIf { row.alarm.scheduledOccurrenceId != null },
+                                row.alarm.snoozedAt.takeIf { row.alarm.snoozeOccurrenceId != null },
+                            )
+                        }
+                        .filterNotNull()
+                        .filter { it.isAfter(now) }
+                        .minOrNull(),
                     message = transient.message,
                     schedulingAccessRequest = transient.schedulingAccessRequest,
                     fullScreenIntentUnavailable = alarms.any { it.alarm.configuredEnabled } &&

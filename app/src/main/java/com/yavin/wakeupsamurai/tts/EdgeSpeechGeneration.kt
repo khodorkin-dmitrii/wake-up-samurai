@@ -8,6 +8,7 @@ import android.os.SystemClock
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.yavin.wakeupsamurai.data.audio.AudioAssetStorage
 import com.yavin.wakeupsamurai.domain.alarm.AudioAsset
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetProvenance
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetRepository
 import java.io.File
 import java.io.FileOutputStream
@@ -82,6 +83,7 @@ class EdgeSpeechGeneration @Inject constructor(
                             request.voice.substringAfter('-').substringBefore('-'),
                         createdAt = Instant.now(),
                         durationMillis = duration,
+                        provenance = AudioAssetProvenance.GENERATED_TEXT,
                     ),
                 )
                 GeneratedSpeech(

@@ -77,30 +77,30 @@ class OneShotAlarmCoordinator @Inject constructor(
             // Unlike legacy NOT_SCHEDULED rules, an interrupted explicit Save needs recovery.
             schedulingState = if (alarm.configuredEnabled) AlarmSchedulingState.FAILED else AlarmSchedulingState.NOT_SCHEDULED,
         )
-        repository.save(reset)
+        val persistedReset = repository.save(reset)
         previous?.nextOccurrence()?.let(scheduler::cancel)
         previous?.pendingSnooze()?.let(scheduler::cancel)
 
-        if (!reset.configuredEnabled) return AlarmSaveResult.SavedWithoutSchedule(reset)
+        if (!persistedReset.configuredEnabled) return AlarmSaveResult.SavedWithoutSchedule(persistedReset)
         when (scheduler.access()) {
-            SchedulingAccess.EXACT_ALARM_ACCESS_REQUIRED -> return blocked(reset, AlarmSchedulingState.BLOCKED_EXACT_ALARM_ACCESS)
-            SchedulingAccess.NOTIFICATION_PERMISSION_REQUIRED -> return blocked(reset, AlarmSchedulingState.BLOCKED_NOTIFICATION_PERMISSION)
-            SchedulingAccess.NOTIFICATIONS_DISABLED -> return blocked(reset, AlarmSchedulingState.BLOCKED_NOTIFICATION_PERMISSION, notificationsDisabled = true)
-            SchedulingAccess.ALARM_CHANNEL_DISABLED -> return blocked(reset, AlarmSchedulingState.FAILED, channelDisabled = true)
+            SchedulingAccess.EXACT_ALARM_ACCESS_REQUIRED -> return blocked(persistedReset, AlarmSchedulingState.BLOCKED_EXACT_ALARM_ACCESS)
+            SchedulingAccess.NOTIFICATION_PERMISSION_REQUIRED -> return blocked(persistedReset, AlarmSchedulingState.BLOCKED_NOTIFICATION_PERMISSION)
+            SchedulingAccess.NOTIFICATIONS_DISABLED -> return blocked(persistedReset, AlarmSchedulingState.BLOCKED_NOTIFICATION_PERMISSION, notificationsDisabled = true)
+            SchedulingAccess.ALARM_CHANNEL_DISABLED -> return blocked(persistedReset, AlarmSchedulingState.FAILED, channelDisabled = true)
             SchedulingAccess.GRANTED -> Unit
         }
 
-        val nextAt = if (reset.repeatDays.isEmpty()) {
-            requireNotNull(reset.resolvedOneShotAt)
+        val nextAt = if (persistedReset.repeatDays.isEmpty()) {
+            requireNotNull(persistedReset.resolvedOneShotAt)
         } else {
-            calculator.recurringStrictlyAfter(now, timeProvider.zoneId(), reset.time, reset.repeatDays)
+            calculator.recurringStrictlyAfter(now, timeProvider.zoneId(), persistedReset.time, persistedReset.repeatDays)
                 ?: return AlarmSaveResult.Failed("Could not calculate the next repeat.")
         }
-        val occurrence = ScheduledOccurrence(reset.id, UUID.randomUUID().toString(), revision + 1L, nextAt.toEpochMilli())
+        val occurrence = ScheduledOccurrence(persistedReset.id, UUID.randomUUID().toString(), revision + 1L, nextAt.toEpochMilli())
         return when (val result = scheduler.schedule(occurrence)) {
             PlatformScheduleResult.Scheduled -> {
-                val saved = reset.copy(
-                    resolvedOneShotAt = if (reset.repeatDays.isEmpty()) nextAt else null,
+                val saved = persistedReset.copy(
+                    resolvedOneShotAt = if (persistedReset.repeatDays.isEmpty()) nextAt else null,
                     scheduleRevision = occurrence.revision,
                     scheduledOccurrenceId = occurrence.occurrenceId,
                     scheduledAt = nextAt,
@@ -108,16 +108,15 @@ class OneShotAlarmCoordinator @Inject constructor(
                     schedulingState = AlarmSchedulingState.SCHEDULED,
                 )
                 try {
-                    repository.save(saved)
-                    AlarmSaveResult.Scheduled(saved)
+                    AlarmSaveResult.Scheduled(repository.save(saved))
                 } catch (exception: Exception) {
                     scheduler.cancel(occurrence)
                     AlarmSaveResult.Failed(exception.message ?: "Could not save the scheduled alarm.")
                 }
             }
-            PlatformScheduleResult.ExactAlarmAccessRequired -> blocked(reset, AlarmSchedulingState.BLOCKED_EXACT_ALARM_ACCESS)
+            PlatformScheduleResult.ExactAlarmAccessRequired -> blocked(persistedReset, AlarmSchedulingState.BLOCKED_EXACT_ALARM_ACCESS)
             is PlatformScheduleResult.Failed -> {
-                repository.save(reset.copy(schedulingState = AlarmSchedulingState.FAILED))
+                repository.save(persistedReset.copy(schedulingState = AlarmSchedulingState.FAILED))
                 AlarmSaveResult.Failed(result.message)
             }
         }
@@ -436,12 +435,12 @@ class OneShotAlarmCoordinator @Inject constructor(
         channelDisabled: Boolean = false,
     ): AlarmSaveResult {
         val saved = alarm.copy(schedulingState = state)
-        repository.save(saved)
+        val persisted = repository.save(saved)
         return when {
-            notificationsDisabled -> AlarmSaveResult.BlockedNotificationsDisabled(saved)
-            channelDisabled -> AlarmSaveResult.BlockedAlarmChannel(saved)
-            state == AlarmSchedulingState.BLOCKED_EXACT_ALARM_ACCESS -> AlarmSaveResult.BlockedExactAlarmAccess(saved)
-            else -> AlarmSaveResult.BlockedNotificationPermission(saved)
+            notificationsDisabled -> AlarmSaveResult.BlockedNotificationsDisabled(persisted)
+            channelDisabled -> AlarmSaveResult.BlockedAlarmChannel(persisted)
+            state == AlarmSchedulingState.BLOCKED_EXACT_ALARM_ACCESS -> AlarmSaveResult.BlockedExactAlarmAccess(persisted)
+            else -> AlarmSaveResult.BlockedNotificationPermission(persisted)
         }
     }
 

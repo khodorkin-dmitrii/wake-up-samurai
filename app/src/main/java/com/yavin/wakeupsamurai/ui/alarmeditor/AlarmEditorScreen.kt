@@ -10,6 +10,14 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,17 +31,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,26 +62,35 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TimePickerDialog
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.yavin.wakeupsamurai.R
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetProvenance
 import com.yavin.wakeupsamurai.domain.theme.AppThemeMode
 import com.yavin.wakeupsamurai.ui.components.ThemeModeAction
 import com.yavin.wakeupsamurai.ui.theme.WakeUpSamuraiTheme
@@ -76,6 +98,9 @@ import com.yavin.wakeupsamurai.ui.components.GradientFilledIconButton
 import java.time.DayOfWeek
 import java.time.format.TextStyle
 import java.util.Locale
+import kotlinx.coroutines.delay
+
+private const val LOADING_PLACEHOLDER_DELAY_MILLIS = 180L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,6 +111,8 @@ fun AlarmEditorScreen(
     onTryPhrase: () -> Unit,
     onConfirmSuggestionReplacement: () -> Unit,
     onDismissSuggestionReplacement: () -> Unit,
+    onConfirmAudioCreationModeChange: () -> Unit,
+    onDismissAudioCreationModeChange: () -> Unit,
     onGenerateAudio: () -> Unit,
     onCancelGeneration: () -> Unit,
     onRetryGeneration: () -> Unit,
@@ -120,6 +147,14 @@ fun AlarmEditorScreen(
     // Unlike Configuration.locales, LocalLocale is present in layout previews and updates on locale changes.
     val locale = LocalLocale.current.platformLocale
     var showTimePicker by remember { mutableStateOf(false) }
+    var showLoadingPlaceholder by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState.isLoading) {
+        showLoadingPlaceholder = false
+        if (uiState.isLoading) {
+            delay(LOADING_PLACEHOLDER_DELAY_MILLIS)
+            showLoadingPlaceholder = true
+        }
+    }
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val permanentlyDenied = !granted &&
             context.findActivity()?.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) == false
@@ -157,6 +192,8 @@ fun AlarmEditorScreen(
         uiState = uiState,
         onConfirmSuggestionReplacement = onConfirmSuggestionReplacement,
         onDismissSuggestionReplacement = onDismissSuggestionReplacement,
+        onConfirmAudioCreationModeChange = onConfirmAudioCreationModeChange,
+        onDismissAudioCreationModeChange = onDismissAudioCreationModeChange,
         onConfirmDelete = onConfirmDelete,
         onDismissDelete = onDismissDelete,
         onConfirmDiscard = onConfirmDiscard,
@@ -165,17 +202,26 @@ fun AlarmEditorScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
                     Text(stringResource(if (uiState.alarmId == null) R.string.new_alarm else R.string.edit_alarm))
                 },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
                 navigationIcon = {
-                    TextButton(onClick = {
+                    IconButton(onClick = {
                         focusManager.clearFocus()
                         onBack()
-                    }) { Text(stringResource(R.string.back)) }
+                    }) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_chevron_left_24),
+                            contentDescription = stringResource(R.string.back),
+                        )
+                    }
                 },
                 actions = {
                     if (uiState.hasPersistedAlarm) {
@@ -208,18 +254,6 @@ fun AlarmEditorScreen(
                             )
                         }
                     }
-                    IconButton(
-                        onClick = {
-                            focusManager.clearFocus()
-                            onTryPhrase()
-                        },
-                        enabled = !uiState.isLoading && !uiState.isSaving,
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_auto_awesome_24),
-                            contentDescription = stringResource(R.string.try_phrase),
-                        )
-                    }
                     ThemeModeAction(themeMode = themeMode, onCycleThemeMode = onCycleThemeMode)
                 },
             )
@@ -235,17 +269,38 @@ fun AlarmEditorScreen(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (uiState.isLoading) {
+            if (uiState.isLoading && showLoadingPlaceholder) {
                 LoadingEditorContent()
-            } else {
-                MessageSection(uiState, onMessageDraftChanged, onLabelChanged)
+            } else if (!uiState.isLoading) {
                 AudioCreationModeSelector(
                     selected = uiState.audioCreationMode,
-                    enabled = uiState.generationStatus !is GenerationStatus.Generating &&
-                        uiState.recordingState !is RecordingState.Recording &&
-                        uiState.recordingState !is RecordingState.AwaitingPermission &&
-                        uiState.recordingState !is RecordingState.Reviewing,
-                    onSelected = onAudioCreationModeChanged,
+                    enabled = !uiState.isSaving,
+                    onSelected = {
+                        focusManager.clearFocus()
+                        onAudioCreationModeChanged(it)
+                    },
+                )
+                val textModeVisible = uiState.audioCreationMode == AudioCreationMode.TEXT
+                AnimatedVisibility(
+                    visible = textModeVisible,
+                    enter = fadeIn(animationSpec = tween(120)) +
+                        expandVertically(animationSpec = tween(180), expandFrom = Alignment.Top),
+                    exit = fadeOut(animationSpec = tween(90)) +
+                        shrinkVertically(animationSpec = tween(180), shrinkTowards = Alignment.Top),
+                ) {
+                    TextMessageInput(
+                        uiState = uiState,
+                        isActive = textModeVisible,
+                        onMessageDraftChanged = onMessageDraftChanged,
+                        onTryPhrase = {
+                            focusManager.clearFocus()
+                            onTryPhrase()
+                        },
+                    )
+                }
+                LabelInput(
+                    label = uiState.label,
+                    onLabelChanged = onLabelChanged,
                 )
                 AudioCard(
                     uiState = uiState,
@@ -304,21 +359,50 @@ fun AlarmEditorScreen(
 }
 
 @Composable
-private fun MessageSection(
+private fun TextMessageInput(
     uiState: AlarmEditorUiState,
+    isActive: Boolean,
     onMessageDraftChanged: (String) -> Unit,
-    onLabelChanged: (String) -> Unit,
+    onTryPhrase: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(
-            value = uiState.messageDraft,
-            onValueChange = onMessageDraftChanged,
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 3,
-            maxLines = 6,
-            label = { Text(stringResource(R.string.editor_title)) },
-            placeholder = { Text(stringResource(R.string.editor_hint)) },
-        )
+    val accessibilityModifier = if (isActive) Modifier else Modifier.clearAndSetSemantics { }
+    val tryPhraseAlignment = when (LocalLayoutDirection.current) {
+        LayoutDirection.Ltr -> Alignment.TopEnd
+        LayoutDirection.Rtl -> Alignment.TopStart
+    }
+    Column(
+        modifier = accessibilityModifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = uiState.messageDraft,
+                onValueChange = onMessageDraftChanged,
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                maxLines = 6,
+                enabled = isActive,
+                label = { Text(stringResource(R.string.editor_title)) },
+                placeholder = { Text(stringResource(R.string.editor_hint)) },
+            )
+            TextButton(
+                onClick = onTryPhrase,
+                enabled = isActive,
+                modifier = Modifier
+                    .align(tryPhraseAlignment)
+                    .offset(x = (0).dp, y = (0).dp)
+                    .height(32.dp),
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_auto_awesome_24),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(stringResource(R.string.try_phrase))
+            }
+        }
         if (uiState.isGeneratedAudioOutdated) {
             Text(
                 text = stringResource(R.string.draft_notice),
@@ -328,14 +412,21 @@ private fun MessageSection(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        OutlinedTextField(
-            value = uiState.label,
-            onValueChange = onLabelChanged,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text(stringResource(R.string.label_optional)) },
-        )
     }
+}
+
+@Composable
+private fun LabelInput(
+    label: String,
+    onLabelChanged: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = label,
+        onValueChange = onLabelChanged,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text(stringResource(R.string.label_optional)) },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -348,14 +439,35 @@ private fun AudioCreationModeSelector(
     val modes = AudioCreationMode.entries
     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
         modes.forEachIndexed { index, mode ->
+            val isSelected = selected == mode
             SegmentedButton(
-                selected = selected == mode,
+                selected = isSelected,
                 onClick = { onSelected(mode) },
                 enabled = enabled,
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
                 modifier = Modifier.weight(1f),
+                icon = {},
             ) {
-                Text(stringResource(if (mode == AudioCreationMode.TEXT) R.string.audio_from_text else R.string.audio_record_voice))
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .size(18.dp)
+                            .alpha(if (isSelected) 1f else 0f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        SegmentedButtonDefaults.Icon(active = true)
+                    }
+                    Text(
+                        text = stringResource(
+                            if (mode == AudioCreationMode.TEXT) R.string.audio_from_text
+                            else R.string.audio_record_voice,
+                        ),
+                        modifier = Modifier.align(Alignment.Center),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
@@ -383,7 +495,13 @@ private fun AudioCard(
     val isGenerating = uiState.generationStatus is GenerationStatus.Generating
     val canPreview = if (showingVoiceDraft && recording is RecordingState.Reviewing) true else uiState.generatedAudio != null
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+    ) {
         Column(
             modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -424,7 +542,9 @@ private fun AudioCard(
                 }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     val (title, detail) = audioStatusText(uiState, showingVoiceDraft)
-                    val hasError = uiState.previewErrorMessage != null || if (uiState.audioCreationMode == AudioCreationMode.TEXT) {
+                    val hasError = uiState.previewErrorMessage != null || if (uiState.selectedAudioProvenance == AudioAssetProvenance.GENERATED_TEXT ||
+                        uiState.generatedAudio == null && uiState.audioCreationMode == AudioCreationMode.TEXT
+                    ) {
                         uiState.isGeneratedAudioOutdated || uiState.generationStatus is GenerationStatus.Error
                     } else {
                         recording is RecordingState.Error ||
@@ -519,6 +639,10 @@ private fun RowScope.AudioActionButton(
         enabled = enabled,
         modifier = Modifier.weight(1f),
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+        ),
     ) {
         Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
@@ -540,17 +664,32 @@ private fun audioStatusText(uiState: AlarmEditorUiState, showingVoiceDraft: Bool
         }
     }
 
-    if (uiState.audioCreationMode == AudioCreationMode.VOICE) {
-        val audio = uiState.generatedAudio
-        return if (audio == null) {
-            stringResource(R.string.audio_not_created) to "Record a message for your morning self."
+    val audio = uiState.generatedAudio
+    if (audio == null) {
+        return if (uiState.audioCreationMode == AudioCreationMode.VOICE) {
+            stringResource(R.string.audio_not_created) to stringResource(R.string.record_voice_hint)
         } else {
-            stringResource(R.string.saved_audio_selected) to audioDurationText(audio)
+            textGenerationStatus(uiState, null)
         }
     }
 
-    val audio = uiState.generatedAudio
-    return when (val generation = uiState.generationStatus) {
+    return when (uiState.selectedAudioProvenance) {
+        AudioAssetProvenance.RECORDED_VOICE -> stringResource(R.string.voice_audio_selected) to
+            selectedAudioDetail(uiState, audio)
+        AudioAssetProvenance.UNKNOWN -> stringResource(R.string.saved_audio_selected) to
+            selectedAudioDetail(uiState, audio)
+        AudioAssetProvenance.GENERATED_TEXT -> if (uiState.audioCreationMode == AudioCreationMode.TEXT) {
+            textGenerationStatus(uiState, audio)
+        } else {
+            stringResource(R.string.text_audio_selected) to selectedAudioDetail(uiState, audio)
+        }
+        null -> textGenerationStatus(uiState, audio)
+    }
+}
+
+@Composable
+private fun textGenerationStatus(uiState: AlarmEditorUiState, audio: GeneratedAudioUi?): Pair<String, String> =
+    when (val generation = uiState.generationStatus) {
         is GenerationStatus.Generating -> stringResource(R.string.generation_generating) to
             if (audio == null) stringResource(R.string.generation_online_notice)
             else "Your previous audio remains available while the replacement is generated."
@@ -563,6 +702,16 @@ private fun audioStatusText(uiState: AlarmEditorUiState, showingVoiceDraft: Bool
             else -> stringResource(R.string.saved_audio_selected) to audioDurationText(audio)
         }
     }
+
+@Composable
+private fun selectedAudioDetail(uiState: AlarmEditorUiState, audio: GeneratedAudioUi): String {
+    val modeDiffers = when (uiState.selectedAudioProvenance) {
+        AudioAssetProvenance.RECORDED_VOICE -> uiState.audioCreationMode != AudioCreationMode.VOICE
+        AudioAssetProvenance.GENERATED_TEXT -> uiState.audioCreationMode != AudioCreationMode.TEXT
+        AudioAssetProvenance.UNKNOWN, null -> false
+    }
+    return if (modeDiffers) stringResource(R.string.selected_audio_from_other_mode, audioDurationText(audio))
+    else audioDurationText(audio)
 }
 
 @Composable
@@ -579,7 +728,13 @@ private fun ScheduleCard(
     onConfiguredEnabledChanged: (Boolean) -> Unit,
     onResolveAccess: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+    ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -589,6 +744,17 @@ private fun ScheduleCard(
                 Text(stringResource(R.string.schedule), style = MaterialTheme.typography.titleLarge)
                 OutlinedButton(
                     onClick = onChooseTime,
+                    shape = RoundedCornerShape(50),
+                    border = BorderStroke(
+                        width = 3.dp,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFFC38BA9),
+                                Color(0xFFFFD1B5),
+                                Color(0xFFBFA6E8),
+                            ),
+                        ),
+                    ),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                 ) {
                     Text(
@@ -644,6 +810,10 @@ private fun DayRows(
                     FilterChip(
                         selected = day in selectedDays,
                         onClick = { onToggle(day) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primary,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
                         label = {
                             Text(
                                 day.getDisplayName(TextStyle.SHORT, locale),
@@ -670,9 +840,31 @@ private fun scheduleStatus(uiState: AlarmEditorUiState): String = when {
 
 @Composable
 private fun LoadingEditorContent() {
+    AudioCreationModeSelector(
+        selected = AudioCreationMode.TEXT,
+        enabled = false,
+        onSelected = {},
+    )
+    OutlinedTextField(
+        value = "",
+        onValueChange = {},
+        modifier = Modifier.fillMaxWidth(),
+        enabled = false,
+        minLines = 3,
+        maxLines = 6,
+        label = { Text(stringResource(R.string.editor_title)) },
+    )
+    OutlinedTextField(
+        value = "",
+        onValueChange = {},
+        modifier = Modifier.fillMaxWidth(),
+        enabled = false,
+        singleLine = true,
+        label = { Text(stringResource(R.string.label_optional)) },
+    )
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(280.dp).padding(16.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp).padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -680,9 +872,57 @@ private fun LoadingEditorContent() {
             Text(stringResource(R.string.loading_alarm), style = MaterialTheme.typography.titleMedium)
         }
     }
-    Card(modifier = Modifier.fillMaxWidth().height(48.dp)) {}
-    Card(modifier = Modifier.fillMaxWidth().height(208.dp)) {}
-    Card(modifier = Modifier.fillMaxWidth().height(280.dp)) {}
+    LoadingScheduleCard()
+}
+
+@Composable
+private fun LoadingScheduleCard() {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.schedule), style = MaterialTheme.typography.titleLarge)
+                OutlinedButton(onClick = {}, enabled = false, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+                    Text("--:--", style = MaterialTheme.typography.headlineMedium)
+                }
+                Switch(checked = false, onCheckedChange = null, enabled = false)
+            }
+            Text(
+                text = stringResource(R.string.loading_alarm),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            LoadingDayRows()
+            Spacer(Modifier.height(48.dp))
+        }
+    }
+}
+
+@Composable
+private fun LoadingDayRows() {
+    DayOfWeek.entries.chunked(4).forEach { days ->
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            days.forEach { day ->
+                FilterChip(
+                    selected = false,
+                    onClick = {},
+                    enabled = false,
+                    label = {
+                        Text(
+                            day.getDisplayName(TextStyle.SHORT, LocalLocale.current.platformLocale),
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            repeat(4 - days.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
 }
 
 @Composable
@@ -690,11 +930,30 @@ private fun EditorDialogs(
     uiState: AlarmEditorUiState,
     onConfirmSuggestionReplacement: () -> Unit,
     onDismissSuggestionReplacement: () -> Unit,
+    onConfirmAudioCreationModeChange: () -> Unit,
+    onDismissAudioCreationModeChange: () -> Unit,
     onConfirmDelete: () -> Unit,
     onDismissDelete: () -> Unit,
     onConfirmDiscard: () -> Unit,
     onDismissDiscard: () -> Unit,
 ) {
+    if (uiState.showModeSwitchConfirmation) {
+        AlertDialog(
+            onDismissRequest = onDismissAudioCreationModeChange,
+            title = { Text(stringResource(R.string.switch_audio_mode_title)) },
+            text = { Text(stringResource(R.string.switch_audio_mode_body)) },
+            confirmButton = {
+                TextButton(onClick = onConfirmAudioCreationModeChange) {
+                    Text(stringResource(R.string.discard_and_switch))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissAudioCreationModeChange) {
+                    Text(stringResource(R.string.keep_current_mode))
+                }
+            },
+        )
+    }
     if (uiState.showDiscardConfirmation) {
         AlertDialog(
             onDismissRequest = onDismissDiscard,
@@ -729,24 +988,92 @@ private fun formatDuration(durationMillis: Long): String {
     return String.format(Locale.US, "%d:%02d", totalSeconds / 60L, totalSeconds % 60L)
 }
 
-@Preview(name = "Light", showBackground = true)
-@Preview(name = "Dark", showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Text ready", group = "Editor", showBackground = true)
 @Composable
-private fun AlarmEditorScreenPreview() {
-    WakeUpSamuraiTheme {
+private fun AlarmEditorTextReadyPreview() = AlarmEditorScreenPreviewContent(
+    AlarmEditorUiState(
+        messageDraft = "Wake up (wake up)\nGrab a brush and put a little make-up",
+        draftRevision = 1L,
+        generationStatus = GenerationStatus.Ready(sourceRevision = 1L),
+        generatedAudio = GeneratedAudioUi("preview", 1L, 4_224L, 935L),
+        selectedAudioProvenance = AudioAssetProvenance.GENERATED_TEXT,
+        nextOccurrenceSummary = "Tomorrow at 07:00",
+        repeatDays = setOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.FRIDAY),
+        configuredEnabled = true,
+    ),
+)
+
+@Preview(
+    name = "Text ready dark",
+    group = "Editor",
+    showBackground = true,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+private fun AlarmEditorTextReadyDarkPreview() = AlarmEditorScreenPreviewContent(
+    uiState = AlarmEditorUiState(
+        messageDraft = "Wake up (wake up)\nGrab a brush and put a little make-up",
+        draftRevision = 1L,
+        generationStatus = GenerationStatus.Ready(sourceRevision = 1L),
+        generatedAudio = GeneratedAudioUi("preview", 1L, 18_000L, 1L, isTextSynchronized = true),
+        nextOccurrenceSummary = "Tomorrow at 07:00",
+        repeatDays = setOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.FRIDAY),
+        configuredEnabled = true,
+    ),
+    darkTheme = true,
+)
+
+@Preview(name = "Text generating", group = "Editor", showBackground = true)
+@Composable
+private fun AlarmEditorTextGeneratingPreview() = AlarmEditorScreenPreviewContent(
+    AlarmEditorUiState(
+        messageDraft = "A new reason to wake up",
+        draftRevision = 2L,
+        generationStatus = GenerationStatus.Generating(sourceRevision = 2L),
+        generatedAudio = GeneratedAudioUi("previous", 1L, 4_224L, 935L),
+        audioSourceText = "The previous reason",
+        selectedAudioProvenance = AudioAssetProvenance.GENERATED_TEXT,
+        nextOccurrenceSummary = "Tomorrow at 07:00",
+    ),
+)
+
+@Preview(name = "Voice ready", group = "Editor", showBackground = true)
+@Composable
+private fun AlarmEditorVoiceReadyPreview() = AlarmEditorScreenPreviewContent(
+    AlarmEditorUiState(
+        audioCreationMode = AudioCreationMode.VOICE,
+        label = "Morning note",
+        generatedAudio = GeneratedAudioUi("voice", 0L, 12_300L, 0L, isTextSynchronized = false),
+        selectedAudioProvenance = AudioAssetProvenance.RECORDED_VOICE,
+        nextOccurrenceSummary = "Tomorrow at 07:00",
+    ),
+)
+
+@Preview(name = "Voice error", group = "Editor", showBackground = true)
+@Composable
+private fun AlarmEditorVoiceErrorPreview() = AlarmEditorScreenPreviewContent(
+    AlarmEditorUiState(
+        audioCreationMode = AudioCreationMode.VOICE,
+        recordingState = RecordingState.PermissionPermanentlyDenied,
+        nextOccurrenceSummary = "Tomorrow at 07:00",
+    ),
+)
+
+@Composable
+private fun AlarmEditorScreenPreviewContent(
+    uiState: AlarmEditorUiState,
+    darkTheme: Boolean = false,
+) {
+    WakeUpSamuraiTheme(darkTheme = darkTheme) {
         AlarmEditorScreen(
-            uiState = AlarmEditorUiState(
-                messageDraft = "Wake up (wake up)\nGrab a brush and put a little make-up",
-                draftRevision = 1L,
-                generationStatus = GenerationStatus.Ready(sourceRevision = 1L),
-                generatedAudio = GeneratedAudioUi("preview", 1L, 4_224L, 935L),
-                nextOccurrenceSummary = "Tomorrow at 07:00",
-            ),
+            uiState = uiState,
             onAudioCreationModeChanged = {},
             onMessageDraftChanged = {},
             onTryPhrase = {},
             onConfirmSuggestionReplacement = {},
             onDismissSuggestionReplacement = {},
+            onConfirmAudioCreationModeChange = {},
+            onDismissAudioCreationModeChange = {},
             onGenerateAudio = {},
             onCancelGeneration = {},
             onRetryGeneration = {},

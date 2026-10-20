@@ -2,6 +2,7 @@ package com.yavin.wakeupsamurai.ui.alarmeditor
 
 import java.time.DayOfWeek
 import com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetProvenance
 
 data class AlarmEditorUiState(
     val isLoading: Boolean = false,
@@ -10,6 +11,8 @@ data class AlarmEditorUiState(
     val messageDraft: String = "",
     val draftRevision: Long = 0L,
     val audioCreationMode: AudioCreationMode = AudioCreationMode.TEXT,
+    val pendingAudioCreationMode: AudioCreationMode? = null,
+    val showModeSwitchConfirmation: Boolean = false,
     val generationStatus: GenerationStatus = GenerationStatus.Idle,
     val generatedAudio: GeneratedAudioUi? = null,
     val isPreviewPlaying: Boolean = false,
@@ -29,6 +32,7 @@ data class AlarmEditorUiState(
     val validationMessage: String? = null,
     val hasPersistedAlarm: Boolean = false,
     val audioSourceText: String? = null,
+    val selectedAudioProvenance: AudioAssetProvenance? = null,
     val recordingState: RecordingState = RecordingState.Idle,
     val schedulingState: AlarmSchedulingState = AlarmSchedulingState.NOT_SCHEDULED,
     val hasPendingRegularOccurrence: Boolean = false,
@@ -38,7 +42,8 @@ data class AlarmEditorUiState(
         get() = messageDraft.isNotBlank() && generationStatus !is GenerationStatus.Generating
 
     val isGeneratedAudioOutdated: Boolean
-        get() = generatedAudio?.isTextSynchronized == true && audioSourceText != messageDraft.trim()
+        get() = selectedAudioProvenance == AudioAssetProvenance.GENERATED_TEXT &&
+            generatedAudio?.isTextSynchronized == true && audioSourceText != messageDraft.trim()
 
     val canRestoreAudioText: Boolean
         get() = isGeneratedAudioOutdated && audioSourceText != null

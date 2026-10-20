@@ -6,13 +6,14 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [AlarmEntity::class, AudioAssetEntity::class],
-    version = 6,
+    entities = [AlarmEntity::class, AudioAssetEntity::class, AlarmNamingStateEntity::class],
+    version = 7,
     exportSchema = true,
 )
 abstract class WakeUpSamuraiDatabase : RoomDatabase() {
     abstract fun alarmDao(): AlarmDao
     abstract fun audioAssetDao(): AudioAssetDao
+    abstract fun alarmNamingStateDao(): AlarmNamingStateDao
 }
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -73,5 +74,24 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE alarms ADD COLUMN ringingDeadlineElapsedMillis INTEGER")
         db.execSQL("ALTER TABLE alarms ADD COLUMN lastRingingFailure TEXT")
+    }
+}
+
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE audio_assets ADD COLUMN provenance TEXT NOT NULL DEFAULT 'UNKNOWN'")
+        db.execSQL("ALTER TABLE alarms ADD COLUMN contentMode TEXT NOT NULL DEFAULT 'TEXT'")
+        db.execSQL("ALTER TABLE alarms ADD COLUMN automaticVoiceTitle TEXT")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS alarm_naming_state " +
+                "(id INTEGER NOT NULL PRIMARY KEY, nextVoiceSequence INTEGER NOT NULL)",
+        )
+        db.execSQL("INSERT OR IGNORE INTO alarm_naming_state (id, nextVoiceSequence) VALUES (0, 1)")
+        // Legacy generated tracks are identifiable by persisted metadata, never a filename extension.
+        db.execSQL("UPDATE audio_assets SET provenance = 'GENERATED_TEXT' WHERE sourceText IS NOT NULL")
+        db.execSQL(
+            "UPDATE audio_assets SET provenance = 'GENERATED_TEXT' " +
+                "WHERE id IN (SELECT audioAssetId FROM alarms WHERE audioSelectionKind = 'GENERATED_FOR_TEXT')",
+        )
     }
 }

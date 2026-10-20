@@ -10,12 +10,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.yavin.wakeupsamurai.ui.alarmeditor.AlarmEditorViewModel
 import com.yavin.wakeupsamurai.ui.alarmlist.AlarmListViewModel
 import com.yavin.wakeupsamurai.ui.audiolibrary.AudioLibraryViewModel
@@ -31,6 +31,7 @@ import androidx.lifecycle.Lifecycle
 import com.yavin.wakeupsamurai.alarm.OneShotAlarmCoordinator
 import com.yavin.wakeupsamurai.alarm.RingingRecoveryStarter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -54,24 +55,30 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by appThemeViewModel.themeMode.collectAsStateWithLifecycle()
             val darkTheme = themeMode.resolveDarkTheme(isSystemInDarkTheme())
+            val lifecycleOwner = LocalLifecycleOwner.current
+            LaunchedEffect(lifecycleOwner) {
+                lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    while (true) {
+                        alarmListViewModel.refreshTime()
+                        val nowMillis = System.currentTimeMillis()
+                        val millisUntilNextMinute = MILLIS_PER_MINUTE - Math.floorMod(nowMillis, MILLIS_PER_MINUTE)
+                        delay(millisUntilNextMinute + MINUTE_BOUNDARY_SETTLE_MILLIS)
+                    }
+                }
+            }
             ThemeRevealTransition(
                 themeMode = themeMode,
                 darkTheme = darkTheme,
                 onCycleThemeMode = appThemeViewModel::cycleThemeMode,
             ) { requestThemeChange ->
                 WakeUpSamuraiTheme(darkTheme = darkTheme) {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background,
-                    ) {
-                        WakeUpSamuraiNavHost(
-                            alarmListViewModel = alarmListViewModel,
-                            alarmEditorViewModel = alarmEditorViewModel,
-                            audioLibraryViewModel = audioLibraryViewModel,
-                            themeMode = themeMode,
-                            onCycleThemeMode = requestThemeChange,
-                        )
-                    }
+                    WakeUpSamuraiNavHost(
+                        alarmListViewModel = alarmListViewModel,
+                        alarmEditorViewModel = alarmEditorViewModel,
+                        audioLibraryViewModel = audioLibraryViewModel,
+                        themeMode = themeMode,
+                        onCycleThemeMode = requestThemeChange,
+                    )
                 }
             }
         }
@@ -115,3 +122,6 @@ class MainActivity : ComponentActivity() {
         alarmEditorViewModel.refreshNextOccurrence()
     }
 }
+
+private const val MILLIS_PER_MINUTE = 60_000L
+private const val MINUTE_BOUNDARY_SETTLE_MILLIS = 25L

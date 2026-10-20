@@ -16,6 +16,8 @@ import com.yavin.wakeupsamurai.data.local.MIGRATION_2_3
 import com.yavin.wakeupsamurai.data.local.MIGRATION_3_4
 import com.yavin.wakeupsamurai.data.local.MIGRATION_4_5
 import com.yavin.wakeupsamurai.data.local.MIGRATION_5_6
+import com.yavin.wakeupsamurai.data.local.MIGRATION_6_7
+import com.yavin.wakeupsamurai.data.local.AlarmNamingStateDao
 import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetRepository
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetUsageRegistry
@@ -59,9 +61,10 @@ object PersistenceModule {
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext context: Context): WakeUpSamuraiDatabase =
         Room.databaseBuilder(context, WakeUpSamuraiDatabase::class.java, "wake-up-samurai.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
             .build()
 
     @Provides fun provideAlarmDao(database: WakeUpSamuraiDatabase): AlarmDao = database.alarmDao()
     @Provides fun provideAudioAssetDao(database: WakeUpSamuraiDatabase): AudioAssetDao = database.audioAssetDao()
+    @Provides fun provideAlarmNamingStateDao(database: WakeUpSamuraiDatabase): AlarmNamingStateDao = database.alarmNamingStateDao()
 }

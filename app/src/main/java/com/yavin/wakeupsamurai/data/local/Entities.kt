@@ -17,6 +17,7 @@ data class AudioAssetEntity(
     val languageTag: String?,
     val createdAtEpochMillis: Long?,
     val durationMillis: Long?,
+    val provenance: String,
 )
 
 @Entity(
@@ -44,6 +45,8 @@ data class AlarmEntity(
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
     val audioSelectionKind: String?,
+    val contentMode: String,
+    val automaticVoiceTitle: String?,
     val scheduleRevision: Long,
     val scheduledOccurrenceId: String?,
     val scheduledAtEpochMillis: Long?,
@@ -67,3 +70,13 @@ data class AlarmWithAudioEntity(
     @androidx.room.Relation(parentColumn = "audioAssetId", entityColumn = "id")
     val audioAsset: AudioAssetEntity?,
 )
+
+@Entity(tableName = "alarm_naming_state")
+data class AlarmNamingStateEntity(
+    @PrimaryKey val id: Int = SINGLETON_ID,
+    val nextVoiceSequence: Long = 1L,
+) {
+    companion object {
+        const val SINGLETON_ID = 0
+    }
+}

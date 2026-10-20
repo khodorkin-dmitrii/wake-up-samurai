@@ -29,14 +29,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
@@ -45,9 +46,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 import java.time.Duration
 import java.time.Instant
 import com.yavin.wakeupsamurai.R
@@ -66,34 +64,26 @@ fun AlarmListScreen(
     onManageAudio: () -> Unit,
     onNotificationPermissionResult: (Boolean) -> Unit,
     onOpenAlarmChannelSettings: () -> Unit,
-    onTimeTick: () -> Unit,
     themeMode: AppThemeMode,
     onCycleThemeMode: (Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val addAlarmLabel = stringResource(R.string.add_alarm)
     val context = androidx.compose.ui.platform.LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) {
-                val nowMillis = System.currentTimeMillis()
-                val millisUntilNextMinute = MILLIS_PER_MINUTE - Math.floorMod(nowMillis, MILLIS_PER_MINUTE)
-                kotlinx.coroutines.delay(millisUntilNextMinute + MINUTE_BOUNDARY_SETTLE_MILLIS)
-                onTimeTick()
-            }
-        }
-    }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         onNotificationPermissionResult(it)
     }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.alarm_list_title)) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
                 actions = {
                     IconButton(onClick = onManageAudio) {
                         Icon(
@@ -314,7 +304,6 @@ private fun AlarmListScreenPreview() {
             onManageAudio = {},
             onNotificationPermissionResult = {},
             onOpenAlarmChannelSettings = {},
-            onTimeTick = {},
             themeMode = AppThemeMode.SYSTEM,
             onCycleThemeMode = {},
         )
@@ -334,7 +323,6 @@ private fun AlarmListEmptyPreview() {
             onManageAudio = {},
             onNotificationPermissionResult = {},
             onOpenAlarmChannelSettings = {},
-            onTimeTick = {},
             themeMode = AppThemeMode.SYSTEM,
             onCycleThemeMode = {},
         )
@@ -420,8 +408,6 @@ private val alarmListPreviewItems = listOf(
     ),
 )
 
-private const val MILLIS_PER_MINUTE = 60_000L
-private const val MINUTE_BOUNDARY_SETTLE_MILLIS = 25L
 private const val SECONDS_PER_HOUR = 60L * 60L
 private const val SECONDS_PER_DAY = 24L * SECONDS_PER_HOUR
 

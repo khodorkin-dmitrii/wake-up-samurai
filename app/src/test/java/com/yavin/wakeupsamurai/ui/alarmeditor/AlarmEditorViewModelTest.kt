@@ -23,6 +23,8 @@ import com.yavin.wakeupsamurai.domain.alarm.Alarm
 import com.yavin.wakeupsamurai.domain.alarm.AudioAsset
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetRepository
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetUsageRegistry
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetProvenance
+import com.yavin.wakeupsamurai.domain.alarm.AlarmContentMode
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.CompletableDeferred
@@ -218,6 +220,142 @@ class AlarmEditorViewModelTest {
     }
 
     @Test
+    fun openingSelectedVoiceAssetInitializesVoiceModeAndRestoresTextAndLabel() = runTest(dispatcher) {
+        val file = File(outputDirectory, "voice.m4a").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        val alarm = Alarm(
+            id = "voice-alarm",
+            label = "Morning note",
+            messageText = "Keep this draft text",
+            time = java.time.LocalTime.of(7, 0),
+            repeatDays = emptySet(),
+            configuredEnabled = false,
+            resolvedOneShotAt = null,
+            audioAssetId = "voice-asset",
+            createdAt = Instant.EPOCH,
+            updatedAt = Instant.EPOCH,
+            contentMode = AlarmContentMode.TEXT,
+        )
+        val asset = AudioAsset(
+            id = "voice-asset",
+            relativePath = file.absolutePath,
+            sourceText = null,
+            voice = null,
+            languageTag = null,
+            createdAt = Instant.EPOCH,
+            durationMillis = 2_000L,
+            provenance = AudioAssetProvenance.RECORDED_VOICE,
+        )
+        val repository = FakeAlarmRepository(initial = listOf(AlarmWithAudio(alarm, asset)))
+        val viewModel = createViewModel(FakeSpeechGeneration { error("Not expected") }, repository)
+
+        viewModel.startSession(alarm.id)
+        advanceUntilIdle()
+
+        assertEquals(AudioCreationMode.VOICE, viewModel.uiState.value.audioCreationMode)
+        assertEquals("Keep this draft text", viewModel.uiState.value.messageDraft)
+        assertEquals("Morning note", viewModel.uiState.value.label)
+        assertEquals(AudioAssetProvenance.RECORDED_VOICE, viewModel.uiState.value.selectedAudioProvenance)
+    }
+
+    @Test
+    fun switchingModesPreservesTextDraftAndSharedLabel() = runTest(dispatcher) {
+        val viewModel = createViewModel(FakeSpeechGeneration { error("Not expected") })
+        viewModel.startSession(null)
+        viewModel.onMessageDraftChanged("Walk before sunrise")
+        viewModel.onLabelChanged("Quiet hour")
+
+        viewModel.onAudioCreationModeChanged(AudioCreationMode.VOICE)
+        viewModel.onAudioCreationModeChanged(AudioCreationMode.TEXT)
+
+        assertEquals("Walk before sunrise", viewModel.uiState.value.messageDraft)
+        assertEquals("Quiet hour", viewModel.uiState.value.label)
+        assertEquals(AudioCreationMode.TEXT, viewModel.uiState.value.audioCreationMode)
+    }
+
+    @Test
+    fun switchingAwayFromGenerationRequiresConfirmationAndKeepsFlowWhenDismissed() = runTest(dispatcher) {
+        val pending = CompletableDeferred<GeneratedSpeech>()
+        val viewModel = createViewModel(FakeSpeechGeneration { pending.await() })
+        viewModel.onMessageDraftChanged("Generate me")
+        viewModel.onGenerateAudio()
+        runCurrent()
+
+        viewModel.onAudioCreationModeChanged(AudioCreationMode.VOICE)
+
+        assertTrue(viewModel.uiState.value.showModeSwitchConfirmation)
+        assertEquals(AudioCreationMode.TEXT, viewModel.uiState.value.audioCreationMode)
+        viewModel.onDismissAudioCreationModeChange()
+        assertFalse(viewModel.uiState.value.showModeSwitchConfirmation)
+        assertTrue(viewModel.uiState.value.generationStatus is GenerationStatus.Generating)
+    }
+
+    @Test
+    fun automaticVoiceTitlesPersistAndNeverReuseNumbersAfterDeletion() = runTest(dispatcher) {
+        val repository = FakeAlarmRepository(assignAutomaticVoiceTitles = true)
+        val first = createViewModel(FakeSpeechGeneration { error("Not expected") }, repository)
+        first.startSession(null)
+        first.onAudioCreationModeChanged(AudioCreationMode.VOICE)
+        first.onSave()
+        advanceUntilIdle()
+        val firstAlarm = repository.values.value.single().alarm
+        assertEquals("Record voice 1", firstAlarm.automaticVoiceTitle)
+
+        repository.delete(firstAlarm.id)
+        val second = createViewModel(FakeSpeechGeneration { error("Not expected") }, repository)
+        second.startSession(null)
+        second.onAudioCreationModeChanged(AudioCreationMode.VOICE)
+        second.onSave()
+        advanceUntilIdle()
+
+        assertEquals("Record voice 2", repository.values.value.single().alarm.automaticVoiceTitle)
+        assertEquals(2, repository.saveCount)
+    }
+
+    @Test
+    fun repeatedVoiceSaveKeepsPreviouslyAllocatedAutomaticTitle() = runTest(dispatcher) {
+        val repository = FakeAlarmRepository(assignAutomaticVoiceTitles = true)
+        val viewModel = createViewModel(FakeSpeechGeneration { error("Not expected") }, repository)
+        viewModel.startSession(null)
+        viewModel.onAudioCreationModeChanged(AudioCreationMode.VOICE)
+
+        viewModel.onSave()
+        viewModel.onSave()
+        advanceUntilIdle()
+
+        assertEquals(1, repository.saveCount)
+        assertEquals("Record voice 1", repository.values.value.single().alarm.automaticVoiceTitle)
+    }
+
+    @Test
+    fun clearingCustomLabelReusesPersistedAutomaticVoiceTitle() = runTest(dispatcher) {
+        val existing = Alarm(
+            id = "voice-alarm",
+            label = "My custom title",
+            messageText = "",
+            time = java.time.LocalTime.of(7, 0),
+            repeatDays = emptySet(),
+            configuredEnabled = false,
+            resolvedOneShotAt = null,
+            audioAssetId = null,
+            createdAt = Instant.EPOCH,
+            updatedAt = Instant.EPOCH,
+            contentMode = AlarmContentMode.VOICE,
+            automaticVoiceTitle = "Record voice 5",
+        )
+        val repository = FakeAlarmRepository(initial = listOf(AlarmWithAudio(existing, null)), assignAutomaticVoiceTitles = true)
+        val viewModel = createViewModel(FakeSpeechGeneration { error("Not expected") }, repository)
+
+        viewModel.startSession(existing.id)
+        advanceUntilIdle()
+        viewModel.onLabelChanged("")
+        viewModel.onSave()
+        advanceUntilIdle()
+
+        assertEquals("Record voice 5", repository.values.value.single().alarm.automaticVoiceTitle)
+        assertEquals(1, repository.saveCount)
+    }
+
+    @Test
     fun selectingSavedAudioKeepsDraftAndDoesNotMarkTrackOutdated() = runTest(dispatcher) {
         val savedFile = File(outputDirectory, "saved.mp3").apply { writeBytes(byteArrayOf(1, 2, 3)) }
         val asset = AudioAsset(
@@ -228,6 +366,7 @@ class AlarmEditorViewModelTest {
             languageTag = "en-US",
             createdAt = Instant.EPOCH,
             durationMillis = 2_000L,
+            provenance = AudioAssetProvenance.RECORDED_VOICE,
         )
         val viewModel = createViewModel(
             generator = FakeSpeechGeneration { error("Not expected") },
@@ -241,6 +380,8 @@ class AlarmEditorViewModelTest {
 
         assertEquals("Keep this alarm draft", viewModel.uiState.value.messageDraft)
         assertEquals(asset.id, viewModel.uiState.value.generatedAudio?.assetId)
+        assertEquals(AudioAssetProvenance.RECORDED_VOICE, viewModel.uiState.value.selectedAudioProvenance)
+        assertEquals(AudioCreationMode.TEXT, viewModel.uiState.value.audioCreationMode)
         assertFalse(viewModel.uiState.value.generatedAudio?.isTextSynchronized ?: true)
         assertFalse(viewModel.uiState.value.isGeneratedAudioOutdated)
     }
@@ -469,14 +610,28 @@ private class FakeAudioPreview : AudioPreview {
     override fun release() = Unit
 }
 
-private class FakeAlarmRepository : AlarmRepository {
-    val values = MutableStateFlow<List<AlarmWithAudio>>(emptyList())
+private class FakeAlarmRepository(
+    initial: List<AlarmWithAudio> = emptyList(),
+    private val assignAutomaticVoiceTitles: Boolean = false,
+) : AlarmRepository {
+    val values = MutableStateFlow(initial)
     var saveCount = 0
+    private var nextVoiceSequence = 1L
     override fun observeAll() = values
     override suspend fun get(id: String): AlarmWithAudio? = values.value.firstOrNull { it.alarm.id == id }
-    override suspend fun save(alarm: Alarm) {
+    override suspend fun save(alarm: Alarm): Alarm {
         saveCount++
-        values.value = values.value.filterNot { it.alarm.id == alarm.id } + AlarmWithAudio(alarm, null)
+        val saved = if (assignAutomaticVoiceTitles && alarm.label.isBlank() &&
+            alarm.automaticVoiceTitle == null && alarm.contentMode == AlarmContentMode.VOICE &&
+            alarm.audioAssetId == null
+        ) {
+            alarm.copy(automaticVoiceTitle = "Record voice ${nextVoiceSequence++}")
+        } else {
+            alarm
+        }
+        val old = values.value.firstOrNull { it.alarm.id == saved.id }
+        values.value = values.value.filterNot { it.alarm.id == saved.id } + AlarmWithAudio(saved, old?.audioAsset)
+        return saved
     }
     override suspend fun delete(id: String) { values.value = values.value.filterNot { it.alarm.id == id } }
     override suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long, bootId: Long,

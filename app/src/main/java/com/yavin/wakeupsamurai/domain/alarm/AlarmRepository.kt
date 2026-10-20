@@ -5,7 +5,8 @@ import kotlinx.coroutines.flow.Flow
 interface AlarmRepository {
     fun observeAll(): Flow<List<AlarmWithAudio>>
     suspend fun get(id: String): AlarmWithAudio?
-    suspend fun save(alarm: Alarm)
+    /** Saves an alarm and atomically assigns an automatic voice title when it needs one. */
+    suspend fun save(alarm: Alarm): Alarm
     suspend fun delete(id: String)
     /** Atomically consumes exactly one pending regular or snooze delivery. */
     suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long, bootId: Long,

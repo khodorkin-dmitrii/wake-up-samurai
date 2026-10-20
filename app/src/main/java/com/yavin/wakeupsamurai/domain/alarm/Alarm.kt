@@ -15,6 +15,8 @@ data class Alarm(
     val createdAt: Instant,
     val updatedAt: Instant,
     val audioSelectionKind: AudioSelectionKind? = null,
+    val contentMode: AlarmContentMode = AlarmContentMode.TEXT,
+    val automaticVoiceTitle: String? = null,
     val scheduleRevision: Long = 0L,
     val scheduledOccurrenceId: String? = null,
     val scheduledAt: Instant? = null,
@@ -52,6 +54,19 @@ enum class AudioSelectionKind {
     SAVED_ASSET,
 }
 
+/** The editor mode retained for an alarm draft that has no selected audio yet. */
+enum class AlarmContentMode {
+    TEXT,
+    VOICE,
+}
+
+/** Durable provenance of an asset, independent from which alarm currently selects it. */
+enum class AudioAssetProvenance {
+    GENERATED_TEXT,
+    RECORDED_VOICE,
+    UNKNOWN,
+}
+
 data class AudioAsset(
     val id: String,
     val relativePath: String,
@@ -60,7 +75,12 @@ data class AudioAsset(
     val languageTag: String?,
     val createdAt: Instant?,
     val durationMillis: Long?,
+    val provenance: AudioAssetProvenance = AudioAssetProvenance.UNKNOWN,
 )
+
+fun Alarm.resolvedTitle(): String = label.ifBlank {
+    automaticVoiceTitle ?: messageText.ifBlank { "Untitled alarm" }
+}
 
 data class AlarmWithAudio(
     val alarm: Alarm,

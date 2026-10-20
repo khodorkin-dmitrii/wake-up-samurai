@@ -550,8 +550,9 @@ private class FakeAlarmRepository : AlarmRepository {
         pauseNextGet?.also { gate -> pauseNextGet = null; gate.await() }
         return values.value.firstOrNull { it.alarm.id == id }
     }
-    override suspend fun save(alarm: Alarm) {
+    override suspend fun save(alarm: Alarm): Alarm {
         values.value = values.value.filterNot { it.alarm.id == alarm.id } + AlarmWithAudio(alarm, null)
+        return alarm
     }
     override suspend fun delete(id: String) { values.value = values.value.filterNot { it.alarm.id == id } }
     override suspend fun claimScheduledOccurrence(alarmId: String, occurrenceId: String, revision: Long, bootId: Long,

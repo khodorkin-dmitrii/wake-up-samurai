@@ -13,6 +13,8 @@ import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetRepository
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetUsageRegistry
 import com.yavin.wakeupsamurai.domain.alarm.AudioSelectionKind
+import com.yavin.wakeupsamurai.domain.alarm.AlarmContentMode
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetProvenance
 import com.yavin.wakeupsamurai.domain.alarm.NextOccurrenceCalculator
 import com.yavin.wakeupsamurai.domain.alarm.TimeProvider
 import com.yavin.wakeupsamurai.tts.GeneratedSpeech
@@ -166,6 +168,9 @@ class AlarmEditorViewModel @Inject constructor(
                 },
                 generationStatus = if (asset != null) GenerationStatus.Ready(0L) else GenerationStatus.Idle,
                 audioSourceText = asset?.sourceText,
+                selectedAudioProvenance = asset?.provenance,
+                audioCreationMode = asset?.provenance.toEditorModeOrNull()
+                    ?: row.alarm.contentMode.toEditorMode(),
                 hour = row.alarm.time.hour,
                 minute = row.alarm.time.minute,
                 repeatDays = row.alarm.repeatDays,
@@ -182,11 +187,36 @@ class AlarmEditorViewModel @Inject constructor(
     fun onLabelChanged(value: String) = edit { copy(label = value) }
 
     fun onAudioCreationModeChanged(mode: AudioCreationMode) {
+        val state = _uiState.value
+        if (state.audioCreationMode == mode) return
+        if (state.generationStatus is GenerationStatus.Generating ||
+            state.recordingState is RecordingState.Recording ||
+            state.recordingState is RecordingState.AwaitingPermission ||
+            state.recordingState is RecordingState.Reviewing ||
+            state.recordingState is RecordingState.Error
+        ) {
+            _uiState.update {
+                it.copy(pendingAudioCreationMode = mode, showModeSwitchConfirmation = true)
+            }
+        } else {
+            changeAudioCreationMode(mode)
+        }
+    }
+
+    fun onConfirmAudioCreationModeChange() {
+        val mode = _uiState.value.pendingAudioCreationMode ?: return
+        if (_uiState.value.generationStatus is GenerationStatus.Generating) cancelGeneration()
         if (_uiState.value.recordingState is RecordingState.Recording ||
             _uiState.value.recordingState is RecordingState.AwaitingPermission ||
-            _uiState.value.recordingState is RecordingState.Reviewing
-        ) return
-        _uiState.update { it.copy(audioCreationMode = mode) }
+            _uiState.value.recordingState is RecordingState.Reviewing ||
+            _uiState.value.recordingState is RecordingState.Error
+        ) onDiscardRecording()
+        _uiState.update { it.copy(pendingAudioCreationMode = null, showModeSwitchConfirmation = false) }
+        changeAudioCreationMode(mode)
+    }
+
+    fun onDismissAudioCreationModeChange() {
+        _uiState.update { it.copy(pendingAudioCreationMode = null, showModeSwitchConfirmation = false) }
     }
 
     fun onMessageDraftChanged(message: String) {
@@ -266,6 +296,7 @@ class AlarmEditorViewModel @Inject constructor(
                             isTextSynchronized = true,
                         ),
                         audioSourceText = request.text.trim(),
+                        selectedAudioProvenance = AudioAssetProvenance.GENERATED_TEXT,
                         isDirty = true,
                     )
                 }
@@ -376,6 +407,7 @@ class AlarmEditorViewModel @Inject constructor(
                         languageTag = null,
                         createdAt = timeProvider.now(),
                         durationMillis = duration,
+                        provenance = AudioAssetProvenance.RECORDED_VOICE,
                     ),
                 )
                 recordingFile = null
@@ -399,6 +431,7 @@ class AlarmEditorViewModel @Inject constructor(
                         ),
                         generationStatus = GenerationStatus.Ready(it.draftRevision),
                         audioSourceText = null,
+                        selectedAudioProvenance = AudioAssetProvenance.RECORDED_VOICE,
                         recordingState = RecordingState.Idle,
                         isDirty = true,
                     )
@@ -466,6 +499,7 @@ class AlarmEditorViewModel @Inject constructor(
                 ),
                 generationStatus = GenerationStatus.Ready(it.draftRevision),
                 audioSourceText = asset.sourceText,
+                selectedAudioProvenance = asset.provenance,
                 previewErrorMessage = null,
                 isDirty = true,
             )
@@ -531,11 +565,13 @@ class AlarmEditorViewModel @Inject constructor(
                     audioAssetId = audio?.assetId,
                     createdAt = existing?.createdAt ?: now,
                     updatedAt = now,
-                    audioSelectionKind = when {
+                audioSelectionKind = when {
                         audio == null -> null
                         state.generatedAudio?.isTextSynchronized == true -> AudioSelectionKind.GENERATED_FOR_TEXT
                         else -> AudioSelectionKind.SAVED_ASSET
                     },
+                contentMode = state.audioCreationMode.toDomainMode(),
+                automaticVoiceTitle = existing?.automaticVoiceTitle,
                 )
                 when (val result = alarmCoordinator.save(alarm)) {
                     is AlarmSaveResult.Scheduled -> completeSave(result.alarm, close = true)
@@ -647,6 +683,28 @@ class AlarmEditorViewModel @Inject constructor(
         _uiState.update { it.transform().copy(isDirty = true, validationMessage = null) }
     }
     private fun applySuggestion() = onMessageDraftChanged(SUGGESTED_PHRASE)
+
+    private fun changeAudioCreationMode(mode: AudioCreationMode) {
+        audioPreview.stop()
+        edit { copy(audioCreationMode = mode, previewErrorMessage = null) }
+    }
+
+    private fun AudioCreationMode.toDomainMode(): AlarmContentMode = when (this) {
+        AudioCreationMode.TEXT -> AlarmContentMode.TEXT
+        AudioCreationMode.VOICE -> AlarmContentMode.VOICE
+    }
+
+    private fun AlarmContentMode.toEditorMode(): AudioCreationMode = when (this) {
+        AlarmContentMode.TEXT -> AudioCreationMode.TEXT
+        AlarmContentMode.VOICE -> AudioCreationMode.VOICE
+    }
+
+    private fun AudioAssetProvenance?.toEditorModeOrNull(): AudioCreationMode? = when (this) {
+        AudioAssetProvenance.GENERATED_TEXT -> AudioCreationMode.TEXT
+        AudioAssetProvenance.RECORDED_VOICE -> AudioCreationMode.VOICE
+        AudioAssetProvenance.UNKNOWN, null -> null
+    }
+
     private fun cancelGeneration() {
         if (generationJob?.isActive != true) return
         activeRequestId++

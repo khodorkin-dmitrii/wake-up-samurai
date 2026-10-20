@@ -6,6 +6,7 @@ import com.yavin.wakeupsamurai.data.local.AlarmEntity
 import com.yavin.wakeupsamurai.data.local.AudioAssetDao
 import com.yavin.wakeupsamurai.data.local.AudioAssetEntity
 import com.yavin.wakeupsamurai.domain.alarm.AudioAsset
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetProvenance
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetAlarmUse
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetUsageRegistry
 import com.yavin.wakeupsamurai.domain.alarm.AudioDeletionResult
@@ -75,9 +76,13 @@ private fun AudioAssetEntity.toDomain() = AudioAsset(
     languageTag = languageTag,
     createdAt = createdAtEpochMillis?.let(Instant::ofEpochMilli),
     durationMillis = durationMillis,
+    provenance = runCatching { AudioAssetProvenance.valueOf(provenance) }
+        .getOrDefault(AudioAssetProvenance.UNKNOWN),
 )
 
 private fun AlarmEntity.toUse(): AudioAssetAlarmUse = AudioAssetAlarmUse(
     alarmId = id,
-    label = label.ifBlank { "Alarm at %02d:%02d".format(hour, minute) },
+    label = label.ifBlank {
+        automaticVoiceTitle ?: messageText.ifBlank { "Alarm at %02d:%02d".format(hour, minute) }
+    },
 )

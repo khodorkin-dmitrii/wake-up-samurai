@@ -1,17 +1,24 @@
 package com.yavin.wakeupsamurai.data.alarm
 
+import android.content.Context
+import com.yavin.wakeupsamurai.R
 import com.yavin.wakeupsamurai.data.audio.AudioAssetFileStore
 import com.yavin.wakeupsamurai.data.local.AlarmDao
+import com.yavin.wakeupsamurai.data.local.AlarmNamingStateDao
+import com.yavin.wakeupsamurai.data.local.AlarmNamingStateEntity
 import com.yavin.wakeupsamurai.data.local.AlarmEntity
 import com.yavin.wakeupsamurai.data.local.AlarmWithAudioEntity
 import com.yavin.wakeupsamurai.data.local.AudioAssetDao
 import com.yavin.wakeupsamurai.data.local.AudioAssetEntity
+import com.yavin.wakeupsamurai.data.local.WakeUpSamuraiDatabase
 import com.yavin.wakeupsamurai.domain.alarm.Alarm
 import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
 import com.yavin.wakeupsamurai.domain.alarm.AlarmSchedulingState
 import com.yavin.wakeupsamurai.domain.alarm.DeliveryClaim
 import com.yavin.wakeupsamurai.domain.alarm.AlarmWithAudio
 import com.yavin.wakeupsamurai.domain.alarm.AudioSelectionKind
+import com.yavin.wakeupsamurai.domain.alarm.AudioAssetProvenance
+import com.yavin.wakeupsamurai.domain.alarm.AlarmContentMode
 import com.yavin.wakeupsamurai.domain.alarm.AudioAsset
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetRepository
 import com.yavin.wakeupsamurai.domain.alarm.AudioAssetUsageRegistry
@@ -22,12 +29,18 @@ import java.time.LocalTime
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import androidx.room.withTransaction
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 @Singleton
 class RoomAlarmRepository @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val alarmDao: AlarmDao,
+    private val audioAssetDao: AudioAssetDao,
+    private val namingStateDao: AlarmNamingStateDao,
+    private val database: WakeUpSamuraiDatabase,
     private val usageRegistry: AudioAssetUsageRegistry,
 ) : AlarmRepository {
     override fun observeAll(): Flow<List<AlarmWithAudio>> = alarmDao.observeAll().map { rows ->
@@ -35,8 +48,19 @@ class RoomAlarmRepository @Inject constructor(
     }
 
     override suspend fun get(id: String): AlarmWithAudio? = alarmDao.get(id)?.toDomain()
-    override suspend fun save(alarm: Alarm) = usageRegistry.withWriteLock {
-        alarmDao.upsert(alarm.toEntity())
+    override suspend fun save(alarm: Alarm): Alarm = usageRegistry.withWriteLock {
+        database.withTransaction {
+            val saved = if (alarm.needsAutomaticVoiceTitle(audioAssetDao.get(alarm.audioAssetId.orEmpty())?.provenance)) {
+                namingStateDao.insertIfAbsent(AlarmNamingStateEntity())
+                val sequence = requireNotNull(namingStateDao.get()).nextVoiceSequence
+                namingStateDao.updateNextVoiceSequence(AlarmNamingStateEntity.SINGLETON_ID, sequence + 1L)
+                alarm.copy(automaticVoiceTitle = context.getString(R.string.automatic_voice_title, sequence))
+            } else {
+                alarm
+            }
+            alarmDao.upsert(saved.toEntity())
+            saved
+        }
     }
     override suspend fun delete(id: String) = alarmDao.delete(id)
 
@@ -122,6 +146,7 @@ class RoomAudioAssetRepository @Inject constructor(
                     languageTag = null,
                     createdAtEpochMillis = null,
                     durationMillis = storage.validatedDuration(file),
+                    provenance = AudioAssetProvenance.UNKNOWN.name,
                 ),
             )
         }
@@ -141,6 +166,8 @@ private fun Alarm.toEntity() = AlarmEntity(
     createdAtEpochMillis = createdAt.toEpochMilli(),
     updatedAtEpochMillis = updatedAt.toEpochMilli(),
     audioSelectionKind = audioSelectionKind?.name,
+    contentMode = contentMode.name,
+    automaticVoiceTitle = automaticVoiceTitle,
     scheduleRevision = scheduleRevision,
     scheduledOccurrenceId = scheduledOccurrenceId,
     scheduledAtEpochMillis = scheduledAt?.toEpochMilli(),
@@ -174,6 +201,8 @@ private fun AlarmWithAudioEntity.toDomain() = AlarmWithAudio(
         createdAt = Instant.ofEpochMilli(alarm.createdAtEpochMillis),
         updatedAt = Instant.ofEpochMilli(alarm.updatedAtEpochMillis),
         audioSelectionKind = alarm.audioSelectionKind?.let(AudioSelectionKind::valueOf),
+        contentMode = alarm.contentMode.let { runCatching { AlarmContentMode.valueOf(it) }.getOrDefault(AlarmContentMode.TEXT) },
+        automaticVoiceTitle = alarm.automaticVoiceTitle,
         scheduleRevision = alarm.scheduleRevision,
         scheduledOccurrenceId = alarm.scheduledOccurrenceId,
         scheduledAt = alarm.scheduledAtEpochMillis?.let(Instant::ofEpochMilli),
@@ -203,6 +232,7 @@ private fun AudioAssetEntity.toDomain() = AudioAsset(
     languageTag = languageTag,
     createdAt = createdAtEpochMillis?.let(Instant::ofEpochMilli),
     durationMillis = durationMillis,
+    provenance = runCatching { AudioAssetProvenance.valueOf(provenance) }.getOrDefault(AudioAssetProvenance.UNKNOWN),
 )
 
 private fun AudioAsset.toEntity() = AudioAssetEntity(
@@ -213,4 +243,11 @@ private fun AudioAsset.toEntity() = AudioAssetEntity(
     languageTag = languageTag,
     createdAtEpochMillis = createdAt?.toEpochMilli(),
     durationMillis = durationMillis,
+    provenance = provenance.name,
 )
+
+private fun Alarm.needsAutomaticVoiceTitle(assetProvenance: String?): Boolean =
+    label.isBlank() && automaticVoiceTitle == null && (
+        assetProvenance == AudioAssetProvenance.RECORDED_VOICE.name ||
+            (audioAssetId == null && contentMode == AlarmContentMode.VOICE)
+        )

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.yavin.wakeupsamurai.alarm.RingingAlarmController
 import com.yavin.wakeupsamurai.alarm.RingingOccurrence
 import com.yavin.wakeupsamurai.domain.alarm.AlarmRepository
+import com.yavin.wakeupsamurai.domain.alarm.resolvedTitle
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
@@ -59,7 +60,7 @@ class RingingViewModel @Inject constructor(
                     RingingUiState.Active(
                         occurrence = occurrence,
                         time = it.alarm.time.format(DateTimeFormatter.ofPattern("HH:mm")),
-                        title = it.alarm.label.ifBlank { "Wake up, Samurai" },
+                        title = it.alarm.resolvedTitle().ifBlank { "Wake up, Samurai" },
                         message = it.alarm.messageText.trim().takeIf(String::isNotBlank),
                     )
                 } ?: RingingUiState.Ended

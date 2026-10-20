@@ -17,6 +17,10 @@
     <string name="draft_notice">Editing text does not change existing audio. Choose Generate to create a matching track.</string>
     <string name="back">Back</string>
     <string name="try_phrase">Try a phrase</string>
+    <string name="switch_audio_mode_title">Discard unfinished audio?</string>
+    <string name="switch_audio_mode_body">Switching modes will cancel the current generation or discard the unkept recording. Your selected completed audio stays available.</string>
+    <string name="discard_and_switch">Discard and switch</string>
+    <string name="keep_current_mode">Keep current mode</string>
     <string name="suggestion_replace_title">Replace this draft?</string>
     <string name="suggestion_replace_body">Your current text will be replaced. Audio will not be generated automatically.</string>
     <string name="replace">Replace</string>
@@ -26,6 +30,11 @@
     <string name="audio_from_text">From text</string>
     <string name="audio_record_voice">Record voice</string>
     <string name="audio_not_created">No audio yet</string>
+    <string name="record_voice_hint">Record a message for your morning self.</string>
+    <string name="voice_audio_selected">Voice recording selected</string>
+    <string name="automatic_voice_title">Record voice %1$d</string>
+    <string name="text_audio_selected">Text audio selected</string>
+    <string name="selected_audio_from_other_mode">Selected audio belongs to the other creation mode · %1$s</string>
     <string name="choose_saved_audio">Use saved audio</string>
     <string name="duration_unavailable">Duration unavailable</string>
     <string name="recording_waiting_permission">Waiting for microphone permission…</string>
