@@ -31,6 +31,7 @@ import com.yavin.wakeupsamurai.ui.savedaudio.SavedAudioPickerScreen
 import com.yavin.wakeupsamurai.ui.audiolibrary.AudioLibraryScreen
 import com.yavin.wakeupsamurai.ui.audiolibrary.AudioLibraryViewModel
 import com.yavin.wakeupsamurai.ui.components.AlarmAmbientBackground
+import com.yavin.wakeupsamurai.ui.debug.DebugScreen
 import com.yavin.wakeupsamurai.alarm.RingingNotificationChannel
 import com.yavin.wakeupsamurai.domain.theme.AppThemeMode
 import java.time.Duration
@@ -79,6 +80,7 @@ fun WakeUpSamuraiNavHost(
                             backStack.popIfTop(SavedAudioPickerKey)
                         }
                         is AudioLibraryKey -> backStack.popIfTop(AudioLibraryKey)
+                        is DebugKey -> backStack.popIfTop(DebugKey)
                         else -> alarmEditorViewModel.onBackRequested()
                     }
                 },
@@ -93,6 +95,7 @@ fun WakeUpSamuraiNavHost(
                     onEnabledChanged = alarmListViewModel::setConfiguredEnabled,
                     onCancelSnooze = alarmListViewModel::cancelSnooze,
                     onManageAudio = dropUnlessResumed { backStack.pushAudioLibraryIfAbsentOnTop() },
+                    onOpenDebug = dropUnlessResumed { backStack.pushDebugIfAbsentOnTop() },
                     onNotificationPermissionResult = alarmListViewModel::onNotificationPermissionResult,
                     onOpenAlarmChannelSettings = {
                         context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
@@ -199,6 +202,14 @@ fun WakeUpSamuraiNavHost(
                     themeMode = themeMode,
                     onCycleThemeMode = onCycleThemeMode,
                 )
+                    }
+                    entry<DebugKey> {
+                        DebugScreen(
+                            onBack = { backStack.popIfTop(DebugKey) },
+                            onDismiss = dropUnlessResumed { backStack.popIfTop(DebugKey) },
+                            themeMode = themeMode,
+                            onCycleThemeMode = onCycleThemeMode,
+                        )
                     }
                 },
             )

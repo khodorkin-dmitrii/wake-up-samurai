@@ -14,3 +14,6 @@ data object SavedAudioPickerKey : NavKey
 
 @Serializable
 data object AudioLibraryKey : NavKey
+
+@Serializable
+data object DebugKey : NavKey

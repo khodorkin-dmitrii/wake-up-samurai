@@ -5,6 +5,8 @@
     <string name="empty_state_body">Leave tomorrow-you a reason to get up — serious, sweet, or gloriously silly.</string>
     <string name="add_alarm">Add alarm</string>
     <string name="manage_audio">Manage audio</string>
+    <string name="open_debug">Open debug tools</string>
+    <string name="debug_title">Debug</string>
     <string name="theme_system">System theme</string>
     <string name="theme_light">Light theme</string>
     <string name="theme_dark">Dark theme</string>
@@ -69,6 +71,9 @@
     <string name="delete_alarm">Delete</string>
     <string name="loading_alarm">Loading alarm…</string>
     <string name="fix_access">Fix</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="drag_to_dismiss">Drag to dismiss</string>
+    <string name="dismiss_drag_description">Drag the Dismiss control to the glowing target. Double tap to dismiss immediately.</string>
     <string name="alarm_countdown_hours_minutes">%1$02d:%2$02d until ringing</string>
     <string name="alarm_countdown_minutes">%1$d min until ringing</string>
     <string name="alarm_countdown_soon">soon</string>

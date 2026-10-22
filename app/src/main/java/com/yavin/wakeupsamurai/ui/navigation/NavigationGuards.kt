@@ -31,3 +31,9 @@ internal fun MutableList<androidx.navigation3.runtime.NavKey>.pushAudioLibraryIf
     add(AudioLibraryKey)
     return true
 }
+
+internal fun MutableList<androidx.navigation3.runtime.NavKey>.pushDebugIfAbsentOnTop(): Boolean {
+    if (lastOrNull() is DebugKey) return false
+    add(DebugKey)
+    return true
+}

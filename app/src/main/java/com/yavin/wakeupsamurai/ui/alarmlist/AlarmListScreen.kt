@@ -62,6 +62,7 @@ fun AlarmListScreen(
     onEnabledChanged: (String, Boolean) -> Unit,
     onCancelSnooze: (String) -> Unit,
     onManageAudio: () -> Unit,
+    onOpenDebug: () -> Unit,
     onNotificationPermissionResult: (Boolean) -> Unit,
     onOpenAlarmChannelSettings: () -> Unit,
     themeMode: AppThemeMode,
@@ -89,6 +90,12 @@ fun AlarmListScreen(
                         Icon(
                             painter = painterResource(R.drawable.ic_audio_file_24),
                             contentDescription = stringResource(R.string.manage_audio),
+                        )
+                    }
+                    IconButton(onClick = onOpenDebug) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_build_24),
+                            contentDescription = stringResource(R.string.open_debug),
                         )
                     }
                     ThemeModeAction(themeMode = themeMode, onCycleThemeMode = onCycleThemeMode)
@@ -302,6 +309,7 @@ private fun AlarmListScreenPreview() {
             onEnabledChanged = { _, _ -> },
             onCancelSnooze = {},
             onManageAudio = {},
+            onOpenDebug = {},
             onNotificationPermissionResult = {},
             onOpenAlarmChannelSettings = {},
             themeMode = AppThemeMode.SYSTEM,
@@ -321,6 +329,7 @@ private fun AlarmListEmptyPreview() {
             onEnabledChanged = { _, _ -> },
             onCancelSnooze = {},
             onManageAudio = {},
+            onOpenDebug = {},
             onNotificationPermissionResult = {},
             onOpenAlarmChannelSettings = {},
             themeMode = AppThemeMode.SYSTEM,

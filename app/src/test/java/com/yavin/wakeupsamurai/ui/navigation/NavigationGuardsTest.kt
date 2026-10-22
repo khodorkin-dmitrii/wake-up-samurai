@@ -7,6 +7,15 @@ import org.junit.Test
 
 class NavigationGuardsTest {
     @Test
+    fun debugGuardRejectsDuplicateDestination() {
+        val stack = mutableListOf<androidx.navigation3.runtime.NavKey>(AlarmListKey)
+
+        assertTrue(stack.pushDebugIfAbsentOnTop())
+        assertFalse(stack.pushDebugIfAbsentOnTop())
+        assertEquals(listOf(AlarmListKey, DebugKey), stack)
+    }
+
+    @Test
     fun savedAudioPickerGuardRejectsDuplicateDestination() {
         val stack = mutableListOf<androidx.navigation3.runtime.NavKey>(AlarmListKey, AlarmEditorKey())
 

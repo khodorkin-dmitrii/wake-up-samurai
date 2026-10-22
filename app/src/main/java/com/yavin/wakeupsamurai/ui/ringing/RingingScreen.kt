@@ -1,5 +1,6 @@
 package com.yavin.wakeupsamurai.ui.ringing
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -18,9 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
-import android.content.res.Configuration
+import androidx.compose.ui.unit.dp
 import com.yavin.wakeupsamurai.alarm.RingingOccurrence
 import com.yavin.wakeupsamurai.ui.theme.WakeUpSamuraiTheme
 
@@ -55,6 +55,7 @@ fun RingingScreen(
             Text(
                 text = state.title,
                 style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
             )
             state.message?.let { message ->
@@ -62,12 +63,12 @@ fun RingingScreen(
                     text = message,
                     modifier = Modifier.padding(top = 16.dp),
                     style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     maxLines = 5,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.height(48.dp))
             state.actionError?.let {
                 Text(
                     text = it,
@@ -76,18 +77,19 @@ fun RingingScreen(
                     textAlign = TextAlign.Center,
                 )
             }
+            DismissDragPad(
+                onDismiss = onDismiss,
+                enabled = !state.isDismissing && !state.isSnoozing,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(vertical = 24.dp),
+            )
             Button(
                 onClick = onSnooze,
                 enabled = !state.isDismissing && !state.isSnoozing,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text(if (state.isSnoozing) "Snoozing…" else "Snooze 5 min") }
-            Button(
-                onClick = onDismiss,
-                enabled = !state.isDismissing && !state.isSnoozing,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            ) {
-                Text(if (state.isDismissing) "Dismissing…" else "Dismiss")
-            }
         }
     }
 }
